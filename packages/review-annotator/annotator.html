@@ -609,7 +609,7 @@ body.review-host #drop-overlay,
 body.review-host #drop-card,
 body.review-host #explode,
 body.review-host [data-mode="cut"],
-body.review-host #video-controls,
+body.review-host:not([data-media-kind="video"]) #video-controls,
 body.review-host #relink,
 body.review-host #save-project,
 body.review-host #preview,
@@ -647,6 +647,17 @@ body.review-host .status-bar {
   body.review-host .tools span {
     display: none;
   }
+}
+
+body.review-host[data-media-kind="video"] #video-controls {
+  display: block !important;
+}
+body.review-host #frame-prev,
+body.review-host #frame-next {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 20px;
+  line-height: 1;
 }
 </style>
 </head>
@@ -944,7 +955,7 @@ SOFTWARE.
         <div class="tool-group history-tools"><button id="undo" title="撤销 (Ctrl / ⌘ + Z)" aria-label="撤销"><svg class="icon" aria-hidden="true"><use href="#i-undo"/></svg></button><button id="redo" title="重做 (Ctrl / ⌘ + Shift + Z)" aria-label="重做"><svg class="icon" aria-hidden="true"><use href="#i-redo"/></svg></button></div>
       </div>
       <section id="video-controls" class="video-controls surface" aria-label="视频时间轴" hidden>
-        <div class="play-row"><button id="play" aria-label="播放视频"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button><button id="back" title="向前 1 秒">−1s</button><input id="timeline" type="range" min="0" max="1" step="0.001" value="0" aria-label="视频进度"><button id="forward" title="向后 1 秒">+1s</button><span id="time" class="time">00:00.000 / 00:00.000</span></div>
+        <div class="play-row"><button id="play" aria-label="播放视频"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button><button id="frame-prev" class="icon-button" title="上一帧 (,)" aria-label="上一帧">‹</button><button id="back" title="向前 1 秒">−1s</button><input id="timeline" type="range" min="0" max="1" step="0.001" value="0" aria-label="视频进度"><button id="forward" title="向后 1 秒">+1s</button><button id="frame-next" class="icon-button" title="下一帧 (.)" aria-label="下一帧">›</button><span id="time" class="time">00:00.000 / 00:00.000</span></div>
         <div class="frame-row"><span>批注帧</span><div id="frame-list"></div><button id="relink" class="quiet">关联源视频</button></div>
       </section>
       <div class="status-bar"><span id="hint">点击或框选，写下修改意见</span><span id="coords"></span></div>
@@ -970,7 +981,7 @@ SOFTWARE.
 <dialog id="pages-dialog" class="pages-dialog"><div class="dialog-head"><div><small>只导出有批注的页面 · 顺序与名称会写入反馈索引</small><h2>管理组图页面</h2></div><button data-close="pages-dialog" class="close icon-button" aria-label="关闭页面管理"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="pages-editor" class="pages-editor"></div><footer><button type="button" data-close="pages-dialog" class="button">关闭</button><button id="pages-dialog-add" type="button" class="button primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>添加页面</button></footer></dialog>
 <dialog id="group-note-dialog" class="note-dialog"><form id="group-note-form"><div class="dialog-head"><div><small id="group-note-location">不绑定到某一页</small><h2 id="group-note-title">整组意见</h2></div><button type="button" data-close="group-note-dialog" class="close icon-button" aria-label="关闭整组意见"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><label for="group-note-text" class="sr-only">整组意见</label><textarea id="group-note-text" maxlength="10000" rows="5" placeholder="不针对某一页的整体要求，例如统一配色、导航位置、整体节奏……" required></textarea><footer><small>Ctrl / ⌘ + Enter 保存</small><button type="button" data-close="group-note-dialog" class="button">取消</button><button type="submit" class="button primary">保存整组意见</button></footer></form></dialog>
 <dialog id="export-dialog" class="export-dialog"><div class="dialog-head"><div><small>结构化反馈 · 保留坐标与时间点</small><h2>查看 JSON 文件</h2></div><button data-close="export-dialog" class="close icon-button" aria-label="关闭 JSON 查看"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><label class="embed"><input id="embed-image" type="checkbox">原图嵌入 JSON</label><label class="embed"><input id="include-recognized-text" type="checkbox" checked>附带区域文字（截图中的文字数据）</label><p id="json-summary" class="json-summary" aria-live="polite"></p><textarea id="json-preview" aria-label="反馈 JSON" readonly spellcheck="false"></textarea><p id="export-hint">只导出有批注或布局变化的画面，源视频不包含在反馈里。</p><footer><div class="copy-text-control"><button id="copy-json" class="button" title="复制 JSON 文本（默认不携带原图信息）">复制 JSON 内容</button><button id="copy-json-options-toggle" class="copy-options-toggle" title="选择是否携带原图信息" aria-label="复制 JSON 内容原图选项" aria-haspopup="menu" aria-expanded="false" aria-controls="copy-json-options">⋮</button><div id="copy-json-options" class="copy-options surface" role="menu" aria-label="复制 JSON 内容原图选项" hidden><button role="menuitemradio" data-copy-image="none" aria-checked="true">不携带原图信息</button><button role="menuitemradio" data-copy-image="embedded" aria-checked="false">携带原图信息</button></div></div><button id="download-json" class="button primary">复制 JSON 与图片</button></footer></dialog>
-<dialog id="help-dialog" class="help-dialog"><div class="dialog-head"><div><small>少一点操作，多一点表达</small><h2>在画布上，直接说清楚</h2></div><button data-close="help-dialog" class="icon-button" aria-label="关闭帮助"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><p>点一下或框出区域写批注。用选择工具拖动批注点和框，或拉动控制点调整范围。大爆炸后拖动、缩放组件，点击位移箭头添加文字。图片外的空白区域可直接拖动。</p><div class="shortcut-grid"><span>选择 / 平移</span><kbd>V / H</kbd><span>智能 / 点 / 框批注</span><kbd>B / P / R</kbd><span>多选组件</span><kbd>Ctrl / ⌘ + 点击</kbd><span>缩放已选组件</span><kbd>指向组件 + 滚轮</kbd><span>框出组件</span><kbd>C</kbd><span>拖动画布</span><kbd>空格 + 拖动 / 中键</kbd><span>缩放画布</span><kbd>Ctrl / ⌘ + 滚轮</kbd><span>适应画布</span><kbd>Ctrl / ⌘ + 0</kbd><span>撤销 / 重做</span><kbd>Ctrl / ⌘ + Z / Y</kbd><span>打开 / 保存 / 导出</span><kbd>Ctrl / ⌘ + O / S / E</kbd><span>微调组件 / 加速</span><kbd>方向键 / Shift</kbd><span>删除批注 / 取消</span><kbd>Delete / Esc</kbd></div><p class="help-footnote">移动和缩放使用原图像素坐标。点、框工具在工具栏里；P / F 是本项通过或不通过，J / K 切换审查项。</p></dialog>
+<dialog id="help-dialog" class="help-dialog"><div class="dialog-head"><div><small>少一点操作，多一点表达</small><h2>在画布上，直接说清楚</h2></div><button data-close="help-dialog" class="icon-button" aria-label="关闭帮助"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><p>点一下或框出区域写批注。用选择工具拖动批注点和框，或拉动控制点调整范围。大爆炸后拖动、缩放组件，点击位移箭头添加文字。图片外的空白区域可直接拖动。</p><div class="shortcut-grid"><span>选择 / 平移</span><kbd>V / H</kbd><span>智能 / 点 / 框批注</span><kbd>B / P / R</kbd><span>多选组件</span><kbd>Ctrl / ⌘ + 点击</kbd><span>缩放已选组件</span><kbd>指向组件 + 滚轮</kbd><span>框出组件</span><kbd>C</kbd><span>拖动画布</span><kbd>空格 + 拖动 / 中键</kbd><span>缩放画布</span><kbd>Ctrl / ⌘ + 滚轮</kbd><span>适应画布</span><kbd>Ctrl / ⌘ + 0</kbd><span>撤销 / 重做</span><kbd>Ctrl / ⌘ + Z / Y</kbd><span>打开 / 保存 / 导出</span><kbd>Ctrl / ⌘ + O / S / E</kbd><span>微调组件 / 加速</span><kbd>方向键 / Shift</kbd><span>删除批注 / 取消</span><kbd>Delete / Esc</kbd></div><p class="help-footnote">移动和缩放使用原图像素坐标。点、框工具在工具栏里；视频用 , / . 逐帧、空格播放或暂停；P / F 是本项通过或不通过，J / K 切换审查项。</p></dialog>
 <script>(function (root, factory) {
   'use strict';
   const api = factory();
@@ -2410,7 +2421,7 @@ function dilate(input,w,h,rx,ry) {
   let explodeEnabled = false, explosionPreview = null;
   let panX = 0, panY = 0, pan = null, spaceDown = false, spaceUsed = false, annotationsVisible = true, hoveredMovement = null;
   let suppressPinClickUntil = 0, componentWheel = null, exportData = null, exportText = '', exportCache = null, feedbackStamp = null;
-  let seeking = false, presentedTime = null, frameCallback = null, linkSignature = null, detectionId = 0;
+  let seeking = false, presentedTime = null, frameCallback = null, linkSignature = null, detectionId = 0, fpsSamples = [];
   const histories = new WeakMap(), detections = new WeakMap(), pendingDetections = new Map();
   let worker;
   try {
@@ -2493,7 +2504,7 @@ function dilate(input,w,h,rx,ry) {
   }
   function changeMode(value) {if(drag)cancelDrag();mode=value;hover=null;hoveredMovement=null;selectedNote=null;document.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===mode);b.setAttribute('aria-pressed',String(b.dataset.mode===mode));});stage.style.cursor=spaceDown||mode==='pan'?'grab':mode==='select'?'default':'crosshair';$('hint').textContent=({select:doc?.layout?'拖动或八向缩放 · Ctrl / ⌘ 多选 · 组件上滚轮缩放':'拖动批注调整位置 · 点击编号编辑文字',smart:'悬停选块 · 滚轮切换大小 · 拖动手动框选',point:'点一下，精确指向一个像素',rect:'拖出范围，写下修改意见',cut:'拖出组件范围，再拖动或缩放',pan:'拖动自由画布 · 滚轮缩放 · 0 适应画面'})[mode];render();}
   function activate() {annotationsVisible=true;syncAnnotationVisibility();endExplosion();explodeEnabled=!!doc?.layout;$('empty').hidden=true;$('workspace').hidden=false;$('save-project').disabled=false;$('save-json').disabled=false;$('export').disabled=false;updateMediaMeta();canvas.width=session.width;canvas.height=session.height;$('overlay').setAttribute('viewBox',`0 0 ${session.width} ${session.height}`);$('video-controls').hidden=session.kind!=='video';$('set-bar').hidden=session.kind!=='set';$('group-note').hidden=session.kind!=='set';document.body.dataset.mediaKind=session.kind;selected=null;selectedNote=null;hover=null;dirty=false;changeMode('smart');refresh();viewportFit();if(doc?.notes.length)globalThis.EditHereChrome?.revealNote(null);}
-  function releaseVideo() {if(frameCallback!==null&&video.cancelVideoFrameCallback)video.cancelVideoFrameCallback(frameCallback);frameCallback=null;video.pause();video.removeAttribute('src');video.load();if(mediaURL)URL.revokeObjectURL(mediaURL);mediaURL=null;presentedTime=null;linkSignature=null;seeking=false;}
+  function releaseVideo() {if(frameCallback!==null&&video.cancelVideoFrameCallback)video.cancelVideoFrameCallback(frameCallback);frameCallback=null;video.pause();video.removeAttribute('src');video.load();if(mediaURL&&mediaURL.startsWith('blob:'))URL.revokeObjectURL(mediaURL);mediaURL=null;presentedTime=null;linkSignature=null;seeking=false;fpsSamples=[];}
   function replaceOK() {if(agentBound&&session){notify('当前素材由 AI 批注会话传入；完成或取消后再打开其他素材');return false;}return !dirty||confirm('当前编辑还没有保存。要替换素材吗？可先取消并保存项目。');}
   async function imageDocFromFile(file,source='file') {const url=URL.createObjectURL(file);try{const image=new Image();image.src=url;await image.decode();sizeOK(image.naturalWidth,image.naturalHeight);const c=makeCanvas(image.naturalWidth,image.naturalHeight);c.getContext('2d').drawImage(image,0,0);const data=c.toDataURL('image/png'),decoded=await decode(data);return makeDoc(decoded,data,null,uid(),captureAt(source,file.name));}finally{URL.revokeObjectURL(url);}}
   async function openImage(file) {if(isSet()){await addPages([file]);return;}const page=await imageDocFromFile(file);releaseVideo();session={kind:'image',name:file.name||'粘贴的图片',width:page.image.naturalWidth,height:page.image.naturalHeight,document:page};doc=session.document;activate();detect(doc);}
@@ -2512,7 +2523,17 @@ function dilate(input,w,h,rx,ry) {
   async function addPages(files) {if(agentBound&&isSet()&&!session.editablePages){notify('当前组图由 AI 维护，完成本轮批注后可由 AI 更新页面');return;}const images=[...files].filter(file=>file&&(file.type?.startsWith('image/')||/\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name||'')));if(!images.length){notify('没有找到可加入组图的图片');return;}const pages=[];for(const file of images){const page=await imageDocFromFile(file);page.name=(file.name||nextPageName()).replace(/\.[^.]+$/,'').slice(0,80)||nextPageName();pages.push(page);}addPageDocs(pages);}
   async function openSet(files) {if(!replaceOK())return;const pages=[];for(const file of files){const page=await imageDocFromFile(file);page.name=(file.name||nextPageName()).replace(/\.[^.]+$/,'').slice(0,80)||nextPageName();pages.push(page);}startSet(pages,{name:(pages[0].name||'组图')+' 组图'});}
   function waitEvent(target,event,timeout=15000) {return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{clean();reject(new Error('读取素材超时，请换一个浏览器支持的文件'));},timeout);const good=()=>{clean();resolve();},bad=()=>{clean();reject(new Error('浏览器无法解码这个视频，请使用 H.264 MP4 或 WebM'));};const clean=()=>{clearTimeout(timer);target.removeEventListener(event,good);target.removeEventListener('error',bad);};target.addEventListener(event,good,{once:true});target.addEventListener('error',bad,{once:true});});}
-  function trackFrames() {if(!video.requestVideoFrameCallback)return;frameCallback=video.requestVideoFrameCallback((now,info)=>{presentedTime=info.mediaTime;trackFrames();});}
+  function trackFrames() {if(!video.requestVideoFrameCallback)return;frameCallback=video.requestVideoFrameCallback((now,info)=>{if(presentedTime!==null&&info.mediaTime>presentedTime){const dt=info.mediaTime-presentedTime;if(dt>0.008&&dt<0.2){fpsSamples.push(1/dt);if(fpsSamples.length>60)fpsSamples.shift();}}presentedTime=info.mediaTime;trackFrames();});}
+  function estimatedFps() {if(session?.video?.fps>0)return session.video.fps;if(fpsSamples.length>=4){const s=fpsSamples.slice().sort((a,b)=>a-b);return s[Math.floor(s.length/2)];}return 30;}
+  function setAgentFps(fps) {if(session?.kind==='video'&&fps>0&&fps<=240)session.video.fps=fps;}
+  async function waitPresented() {if(seeking)await waitEvent(video,'seeked');if(!video.requestVideoFrameCallback||presentedTime!==null)return;await new Promise(resolve=>{const timer=setTimeout(resolve,400);video.requestVideoFrameCallback((now,info)=>{presentedTime=info.mediaTime;clearTimeout(timer);resolve();});});}
+  async function stepFrame(delta) {if(!mediaURL||session?.kind!=='video')return;video.pause();const fps=estimatedFps(),duration=Number.isFinite(video.duration)?video.duration:(session.video.durationMs/1000),time=doc?doc.timestampUs/1000000:(presentedTime??(video.currentTime||0)),index=Math.max(0,Math.round(time*fps-0.5)+(delta||0)),target=clamp((index+0.5)/fps,0,Math.max(0,duration-1/fps));await seekTo(target);await waitPresented();liveFrame();updateTime();}
+  async function prepareVideoUrl(src) {const probe=document.createElement('video');probe.preload='auto';try{const ready=waitEvent(probe,'loadeddata'),failed=waitEvent(probe,'error').then(()=>{throw new Error('无法播放这段视频');});probe.src=src;await Promise.race([ready,failed]);sizeOK(probe.videoWidth,probe.videoHeight);if(!Number.isFinite(probe.duration))throw new Error('视频时长无效');return {url:src,width:probe.videoWidth,height:probe.videoHeight,durationMs:Math.round(probe.duration*1000)};}finally{probe.removeAttribute('src');probe.load();}}
+  async function attachVideoUrl(src,prepared) {mediaURL=prepared.url;const ready=waitEvent(video,'loadeddata'),failed=waitEvent(video,'error').then(()=>{throw new Error('无法播放这段视频');});video.src=mediaURL;await Promise.race([ready,failed]);trackFrames();}
+  async function restoreVideoFrames(frames) {if(!Array.isArray(frames)||!frames.length)return;for(const frame of frames){if(!frame||!Number.isFinite(frame.timestampUs))continue;await seekTo(frame.timestampUs/1000000);await waitPresented();const d=ensureDoc();if(Array.isArray(frame.notes))d.notes=clone(frame.notes);if(frame.layout!==undefined)d.layout=clone(frame.layout);if(hasContent(d)&&!session.frames.includes(d)){session.frames.push(d);session.frames.sort((a,b)=>a.timestampUs-b.timestampUs);}refresh();updateTime();}changed();}
+  function annotatedFrames() {if(session?.kind!=='video')return [];const fps=estimatedFps();return session.frames.filter(hasContent).map(page=>{const timeUs=page.timestampUs,timeMs=Math.floor(timeUs/1000),index=Math.max(0,Math.round((timeUs/1000000)*fps-0.5));return {id:page.id,timestampUs:timeUs,timeMs,index,dataUrl:annotatedCanvas(page).toDataURL('image/png')};});}
+  async function playPause() {if(!mediaURL||session?.kind!=='video')return;if(video.paused){const at=doc?doc.timestampUs/1000000:video.currentTime;await seekTo(at);await video.play();liveFrame();}else video.pause();updateTime();}
+
   async function prepareVideo(file) {const probe=document.createElement('video'),url=URL.createObjectURL(file);probe.preload='auto';try{const ready=waitEvent(probe,'loadeddata');probe.src=url;await ready;sizeOK(probe.videoWidth,probe.videoHeight);if(!Number.isFinite(probe.duration))throw new Error('视频时长无效');return {url,width:probe.videoWidth,height:probe.videoHeight,durationMs:Math.round(probe.duration*1000)};}catch(error){URL.revokeObjectURL(url);throw error;}finally{probe.removeAttribute('src');probe.load();}}
   async function attachVideo(file,prepared) {mediaURL=prepared.url;const ready=waitEvent(video,'loadeddata');video.src=mediaURL;await ready;linkSignature={name:file.name,size:file.size,lastModified:file.lastModified};trackFrames();}
   async function openVideo(file) {const prepared=await prepareVideo(file);releaseVideo();session={kind:'video',name:file.name,width:prepared.width,height:prepared.height,video:{source:file.name,durationMs:prepared.durationMs,width:prepared.width,height:prepared.height},signature:{name:file.name,size:file.size,lastModified:file.lastModified},capture:captureAt('video',file.name),frames:[]};doc=null;await attachVideo(file,prepared);activate();updateTime();}
@@ -3276,7 +3297,7 @@ function dilate(input,w,h,rx,ry) {
   document.addEventListener('paste',event=>{if(event.target.closest('textarea,input,[contenteditable]'))return;const image=[...event.clipboardData?.items||[]].find(i=>i.type.startsWith('image/'));if(image){event.preventDefault();run(()=>openFile(image.getAsFile(),'clipboard'));}});
   $('demo').onclick=()=>run(async()=>{if(!replaceOK())return;const brand=document.querySelector('.brand-lockup-light');await brand.decode();const c=makeCanvas(1100,700),p=c.getContext('2d');p.fillStyle='#f2f5fb';p.fillRect(0,0,1100,700);p.fillStyle='#fff';p.fillRect(0,0,190,700);p.fillRect(225,35,835,90);p.fillStyle='#346df1';p.fillRect(245,170,245,150);p.fillStyle='#36ae95';p.fillRect(520,170,245,150);p.fillStyle='#8a6add';p.fillRect(795,170,245,150);p.fillStyle='#fff';p.fillRect(245,355,795,270);p.fillStyle='#243149';p.font='bold 25px sans-serif';p.drawImage(brand,24,29,142,142*128/722);p.fillText('Overview',245,88);p.font='16px sans-serif';p.fillStyle='#7b879a';for(const [i,t] of ['Dashboard','Projects','Analytics','Settings'].entries())p.fillText(t,30,150+i*55);p.fillStyle='#fff';p.font='14px sans-serif';p.fillText('Visitors',266,205);p.fillText('Conversions',541,205);p.fillText('Revenue',816,205);p.font='bold 38px sans-serif';p.fillText('24,680',266,265);p.fillText('1,842',541,265);p.fillText('$38,420',816,265);p.fillStyle='#346df1';p.fillRect(910,60,110,38);p.fillStyle='#fff';p.font='14px sans-serif';p.fillText('Export',940,85);p.fillStyle='#243149';p.font='bold 18px sans-serif';p.fillText('Traffic over time',270,397);p.strokeStyle='#346df1';p.lineWidth=3;p.beginPath();p.moveTo(275,580);p.bezierCurveTo(420,420,480,630,620,470);p.bezierCurveTo(740,350,850,540,1000,430);p.stroke();const data=c.toDataURL('image/png'),image=await decode(data);releaseVideo();session={kind:'image',name:'示例仪表盘.png',width:1100,height:700,document:makeDoc(image,data,null,uid(),captureAt('demo','示例仪表盘.png'))};doc=session.document;activate();detect(doc);});
   $('play').onclick=()=>run(async()=>{if(!mediaURL)throw new Error('请重新选择源视频');if(video.paused){const at=doc?doc.timestampUs/1000000:video.currentTime;await seekTo(at);await video.play();liveFrame();}else video.pause();updateTime();});
-  $('back').onclick=()=>run(()=>seekTo((doc?doc.timestampUs/1000000:video.currentTime)-1));$('forward').onclick=()=>run(()=>seekTo((doc?doc.timestampUs/1000000:video.currentTime)+1));$('timeline').oninput=()=>{if(!mediaURL)return;video.pause();liveFrame();video.currentTime=Number($('timeline').value);updateTime();};$('frame-list').onclick=event=>{const id=event.target.closest('[data-frame]')?.dataset.frame;if(id)run(()=>selectFrame(id));};
+  $('back').onclick=()=>run(()=>seekTo((doc?doc.timestampUs/1000000:video.currentTime)-1));$('forward').onclick=()=>run(()=>seekTo((doc?doc.timestampUs/1000000:video.currentTime)+1));if($('frame-prev'))$('frame-prev').onclick=()=>run(()=>stepFrame(-1));if($('frame-next'))$('frame-next').onclick=()=>run(()=>stepFrame(1));$('timeline').oninput=()=>{if(!mediaURL)return;video.pause();liveFrame();video.currentTime=Number($('timeline').value);updateTime();};$('frame-list').onclick=event=>{const id=event.target.closest('[data-frame]')?.dataset.frame;if(id)run(()=>selectFrame(id));};
   video.addEventListener('seeking',()=>{seeking=true;presentedTime=null;});video.addEventListener('seeked',()=>{seeking=false;updateTime();});for(const event of ['timeupdate','pause','play','ended'])video.addEventListener(event,updateTime);
   document.addEventListener('keydown',event=>{
     if(event.target.closest('textarea,input,dialog'))return;
@@ -3438,10 +3459,28 @@ function dilate(input,w,h,rx,ry) {
     changeMode,
     view() {return {zoom,panX,panY,fitMode};},
     panBy(dx,dy) {if(!session)return;panX+=dx;panY+=dy;fitMode=false;resizeStage();},
-    cancelInteraction() {cancelDrag();finishPan();}
+    cancelInteraction() {cancelDrag();finishPan();},
+    async loadAgentVideo(value) {
+      if(session)throw new Error('当前页面已有素材，请为批注会话打开新页面');
+      if(!value||typeof value.src!=='string'||!value.src)throw new Error('缺少视频地址');
+      const prepared=await prepareVideoUrl(value.src);
+      releaseVideo();agentBound=true;agentOptions={imageMode:'none',preview:false};
+      session={kind:'video',name:value.name||'video',width:prepared.width,height:prepared.height,video:{source:value.name||value.src,durationMs:value.durationMs||prepared.durationMs,width:prepared.width,height:prepared.height,...(value.fps>0?{fps:value.fps}:{})},signature:null,frames:[]};
+      doc=null;await attachVideoUrl(value.src,prepared);activate();updateTime();
+      if(value.frames&&value.frames.length)await restoreVideoFrames(value.frames);
+    },
+    restoreVideoFrames,
+    stepFrame,
+    seekTo,
+    playPause,
+    estimatedFps,
+    setFps:setAgentFps,
+    annotatedFrames,
+    sessionKind() {return session?.kind||null;},
+    currentTimestampUs() {if(session?.kind!=='video')return null;return doc?doc.timestampUs:Math.round((presentedTime??(video.currentTime||0))*1000000);}
   };
 })();
-</script><script>// Host adapter (not upstream EditHere code). Maps feedback-minimal-4 objects
+</script><script>// Host adapter (not upstream EditHere code). Maps feedback-minimal-4 and video-feedback-1 objects
 // to the review Annotation[] shape and strips embedded images from drafts.
 (function (root, factory) {
   const api = factory()
@@ -3524,16 +3563,71 @@ function dilate(input,w,h,rx,ry) {
     return copy
   }
 
-  const FILE_OK = /^[A-Za-z0-9_.-]+$/
+  const partName = (value) =>
+    String(value || "asset")
+      .replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .replace(/_+/g, "_")
+      .slice(0, 40) || "asset"
+
   function fileName(item, asset) {
-    const part = (value) =>
-      String(value || "asset")
-        .replace(/[^A-Za-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .replace(/_+/g, "_")
-        .slice(0, 40) || "asset"
-    const name = `${part(item)}-${part(asset)}.annotated.png`
+    const name = `${partName(item)}-${partName(asset)}.annotated.png`
     return name.length <= 128 ? name : "annotated.png"
+  }
+
+  function frameFileName(item, asset, frame = {}) {
+    const tag =
+      Number.isFinite(frame.index) ? "f" + Math.round(frame.index) : "t" + Math.round(frame.timeMs || 0)
+    const name = `${partName(item)}-${partName(asset)}-${tag}.annotated.png`
+    return name.length <= 128 ? name : "frame.annotated.png"
+  }
+
+  function frameIndex(timeSec, fps) {
+    if (!(fps > 0) || !Number.isFinite(timeSec)) return undefined
+    return Math.max(0, Math.round(timeSec * fps - 0.5))
+  }
+
+  function fromVideoFeedback(feedback, fps) {
+    const frames = feedback?.frames
+    if (!Array.isArray(frames)) return fromFeedback(feedback)
+    const out = []
+    for (const frame of frames) {
+      const timeUs = Number.isFinite(frame.timestampUs) ? frame.timestampUs : undefined
+      const timeMs = Number.isFinite(frame.timestampMs)
+        ? frame.timestampMs
+        : timeUs !== undefined
+          ? Math.floor(timeUs / 1000)
+          : undefined
+      const timeSec = timeUs !== undefined ? timeUs / 1_000_000 : timeMs !== undefined ? timeMs / 1000 : undefined
+      const index = frameIndex(timeSec, fps ?? feedback.fps)
+      const marks = fromFeedback(frame.feedback)
+      for (const mark of marks) {
+        const meta = {}
+        if (timeMs !== undefined) meta.timeMs = timeMs
+        if (timeUs !== undefined) meta.timeUs = timeUs
+        if (index !== undefined) meta.index = index
+        if (Object.keys(meta).length) mark.frame = meta
+        out.push(mark)
+      }
+    }
+    return out
+  }
+
+  function annotationsOf(feedback, fps) {
+    if (feedback && (feedback.schemaVersion === "video-feedback-1" || Array.isArray(feedback.frames)))
+      return fromVideoFeedback(feedback, fps ?? feedback.fps)
+    return fromFeedback(feedback)
+  }
+
+  function frameNotes(raw) {
+    if (Array.isArray(raw?.frameNotes)) return raw.frameNotes
+    if (!Array.isArray(raw?.frames)) return []
+    return raw.frames.map((frame) => ({
+      id: frame.id,
+      timestampUs: frame.timestampUs,
+      notes: frame.notes,
+      layout: frame.layout,
+    }))
   }
 
   const MAX_SNAPSHOT = 8 * 1024 * 1024
@@ -3550,12 +3644,17 @@ function dilate(input,w,h,rx,ry) {
     return dataUrl
   }
 
-  return { fromFeedback, stripImage, fileName, flatten, dataUrlBytes, snapshotIfSmall, MAX_SNAPSHOT }
+  return { fromFeedback, fromVideoFeedback, annotationsOf, stripImage, fileName, frameFileName, frameNotes, frameIndex, flatten, dataUrlBytes, snapshotIfSmall, MAX_SNAPSHOT }
 })
 
 const fromFeedback = globalThis.ReviewAnnotatorMap.fromFeedback
+const fromVideoFeedback = globalThis.ReviewAnnotatorMap.fromVideoFeedback
+const annotationsOf = globalThis.ReviewAnnotatorMap.annotationsOf
 const stripImage = globalThis.ReviewAnnotatorMap.stripImage
 const fileName = globalThis.ReviewAnnotatorMap.fileName
+const frameFileName = globalThis.ReviewAnnotatorMap.frameFileName
+const frameNotes = globalThis.ReviewAnnotatorMap.frameNotes
+const frameIndex = globalThis.ReviewAnnotatorMap.frameIndex
 const flatten = globalThis.ReviewAnnotatorMap.flatten
 const dataUrlBytes = globalThis.ReviewAnnotatorMap.dataUrlBytes
 const snapshotIfSmall = globalThis.ReviewAnnotatorMap.snapshotIfSmall
@@ -3652,12 +3751,48 @@ const distance = globalThis.ReviewAnnotatorTouch.distance
 const midpoint = globalThis.ReviewAnnotatorTouch.midpoint
 const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
 </script><script>// Host adapter (not upstream EditHere code).
-// M7 will add in-browser frame step and capture here. M6 is image-only.
-(function (root) {
-  const api = { supported: false }
+// Browser-only frame stepping and fps helpers; no ffmpeg.
+(function (root, factory) {
+  const api = factory()
   if (typeof module === "object" && module.exports) module.exports = api
   root.ReviewAnnotatorVideo = api
-})(typeof globalThis !== "undefined" ? globalThis : this)
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  const FALLBACK_FPS = 30
+
+  function frameIndex(timeSec, fps) {
+    if (!(fps > 0) || !Number.isFinite(timeSec)) return 0
+    return Math.max(0, Math.round(timeSec * fps - 0.5))
+  }
+
+  function frameTime(index, fps) {
+    if (!(fps > 0)) return 0
+    return (Math.max(0, index) + 0.5) / fps
+  }
+
+  function stepTime(timeSec, fps, delta, durationSec) {
+    const rate = fps > 0 ? fps : FALLBACK_FPS
+    const duration = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : Infinity
+    const index = Math.max(0, frameIndex(timeSec, rate) + (delta || 0))
+    const target = frameTime(index, rate)
+    const last = Number.isFinite(duration) ? Math.max(0, duration - 1 / rate) : target
+    return Math.min(target, last)
+  }
+
+  function estimateFps(samples, fallback = FALLBACK_FPS) {
+    const rates = (samples || []).filter((value) => value > 1 && value <= 240)
+    if (rates.length < 4) return fallback
+    const sorted = rates.slice().sort((a, b) => a - b)
+    return sorted[Math.floor(sorted.length / 2)]
+  }
+
+  return { FALLBACK_FPS, frameIndex, frameTime, stepTime, estimateFps }
+})
+
+const FALLBACK_FPS = globalThis.ReviewAnnotatorVideo.FALLBACK_FPS
+const frameIndex = globalThis.ReviewAnnotatorVideo.frameIndex
+const frameTime = globalThis.ReviewAnnotatorVideo.frameTime
+const stepTime = globalThis.ReviewAnnotatorVideo.stepTime
+const estimateFps = globalThis.ReviewAnnotatorVideo.estimateFps
 </script><script>// Host adapter (not upstream EditHere code). Talks to the approval shell over postMessage.
 (function () {
   const TYPE = {
@@ -3672,12 +3807,13 @@ const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
   const SHELL_KEYS = new Set(["j", "k", "p", "f"])
   const MapApi = globalThis.ReviewAnnotatorMap
   const Touch = globalThis.ReviewAnnotatorTouch
+  const Video = globalThis.ReviewAnnotatorVideo
 
   document.body.classList.add("review-host")
   document.documentElement.classList.add("review-host")
 
   const app = () => globalThis.EditHereWeb
-  let current = { item: "", asset: "", src: "", name: "" }
+  let current = { item: "", asset: "", src: "", name: "", kind: "image", fps: undefined }
   let lastRevision = -1
   let loadToken = 0
   const parentOrigin = () => (window.location.origin && window.location.origin !== "null" ? window.location.origin : "*")
@@ -3705,6 +3841,12 @@ const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
     return blobToDataUrl(blob)
   }
 
+  function fpsOf() {
+    const editor = app()
+    const live = editor && typeof editor.estimatedFps === "function" ? editor.estimatedFps() : undefined
+    return current.fps || live
+  }
+
   function snapshot() {
     const editor = app()
     if (!editor || !current.src) {
@@ -3716,7 +3858,23 @@ const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
     } catch (error) {
       feedback = undefined
     }
-    const annotations = feedback ? MapApi.fromFeedback(feedback) : []
+    const fps = fpsOf()
+    if (feedback && current.kind === "video") {
+      feedback.fps = fps
+      try {
+        const project = editor.project?.()
+        if (project && Array.isArray(project.frames)) {
+          feedback.frameNotes = project.frames.map((frame) => ({
+            id: frame.id,
+            timestampUs: frame.timestampUs,
+            notes: frame.notes,
+            layout: frame.layout,
+          }))
+        }
+      } catch (error) {}
+      feedback = MapApi.stripImage(feedback)
+    }
+    const annotations = feedback ? MapApi.annotationsOf(feedback, fps) : []
     return { item: current.item, asset: current.asset, annotations, raw: feedback }
   }
 
@@ -3746,28 +3904,48 @@ const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
     const editor = app()
     if (!editor) throw new Error("标注器还没准备好")
     const token = ++loadToken
-    current = { item: message.item || "", asset: message.asset || "", src: message.src || "", name: message.name || message.asset || "" }
+    const kind = message.kind === "video" ? "video" : "image"
+    current = {
+      item: message.item || "",
+      asset: message.asset || "",
+      src: message.src || "",
+      name: message.name || message.asset || "",
+      kind,
+      fps: message.fps > 0 ? message.fps : undefined,
+    }
     lastRevision = -1
     editor.resetAgent?.()
     editor.bindAgent?.()
-    const dataUrl = await fetchImage(message.src)
-    if (token !== loadToken) return
     const draft = message.draft
     const raw = draft && draft.raw
-    if (raw && raw.objects) {
-      try {
-        await editor.loadAgentFeedback({
-          name: current.name,
-          image: dataUrl,
-          feedback: raw,
-          imageMode: "none",
-          preview: false,
-        })
-      } catch (error) {
+    if (kind === "video") {
+      if (current.fps) editor.setFps?.(current.fps)
+      const frames = raw ? MapApi.frameNotes(raw) : []
+      await editor.loadAgentVideo({
+        src: current.src,
+        name: current.name,
+        fps: current.fps,
+        frames: frames.filter((frame) => Number.isFinite(frame.timestampUs) && (frame.notes || frame.layout)),
+      })
+      if (current.fps) editor.setFps?.(current.fps)
+    } else {
+      const dataUrl = await fetchImage(message.src)
+      if (token !== loadToken) return
+      if (raw && raw.objects) {
+        try {
+          await editor.loadAgentFeedback({
+            name: current.name,
+            image: dataUrl,
+            feedback: raw,
+            imageMode: "none",
+            preview: false,
+          })
+        } catch (error) {
+          await editor.loadAgentImage({ name: current.name, image: dataUrl, imageMode: "none", preview: false })
+        }
+      } else {
         await editor.loadAgentImage({ name: current.name, image: dataUrl, imageMode: "none", preview: false })
       }
-    } else {
-      await editor.loadAgentImage({ name: current.name, image: dataUrl, imageMode: "none", preview: false })
     }
     if (token !== loadToken) return
     lastRevision = editor.projectRevision?.() ?? 0
@@ -3777,12 +3955,30 @@ const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
 
   function exportNow(request) {
     const state = snapshot()
-    const dataUrl = renderSnapshot()
-    const file =
-      dataUrl && state.annotations.length
-        ? { name: MapApi.fileName(state.item, state.asset), dataUrl }
-        : undefined
-    post({ type: TYPE.exportRes, request, ...state, file })
+    const files = []
+    const editor = app()
+    if (current.kind === "video" && editor && typeof editor.annotatedFrames === "function") {
+      try {
+        let used = 0
+        for (const frame of editor.annotatedFrames() || []) {
+          const dataUrl = MapApi.snapshotIfSmall(frame.dataUrl)
+          if (!dataUrl) continue
+          const size = MapApi.dataUrlBytes(dataUrl)
+          if (used + size > MapApi.MAX_SNAPSHOT) continue
+          used += size
+          const name = MapApi.frameFileName(state.item, state.asset, frame)
+          files.push({ name, dataUrl })
+          for (const mark of state.annotations || []) {
+            if (mark.frame && mark.frame.timeUs === frame.timestampUs) mark.frame.image = name
+          }
+        }
+      } catch (error) {}
+    } else {
+      const dataUrl = renderSnapshot()
+      if (dataUrl && state.annotations.length)
+        files.push({ name: MapApi.fileName(state.item, state.asset), dataUrl })
+    }
+    post({ type: TYPE.exportRes, request, ...state, file: files[0], files })
   }
 
   window.addEventListener("message", (event) => {
@@ -3816,6 +4012,20 @@ const nextZoom = globalThis.ReviewAnnotatorTouch.nextZoom
       }
       if (typing || ctrl || event.altKey) return
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      const editor = app()
+      const video = current.kind === "video" || editor?.sessionKind?.() === "video"
+      if (video && (key === "," || key === "." || event.key === "，" || event.key === "。")) {
+        event.preventDefault()
+        event.stopPropagation()
+        editor?.stepFrame?.(key === "." || event.key === "。" ? 1 : -1)
+        return
+      }
+      if (video && event.code === "Space") {
+        event.preventDefault()
+        event.stopPropagation()
+        editor?.playPause?.()
+        return
+      }
       if (key === "g") {
         event.preventDefault()
         event.stopPropagation()

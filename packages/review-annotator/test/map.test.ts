@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { dataUrlBytes, fileName, fromFeedback, snapshotIfSmall, stripImage } from "../host/map.js"
+import { dataUrlBytes, fileName, frameFileName, fromFeedback, fromVideoFeedback, snapshotIfSmall, stripImage } from "../host/map.js"
 
 const feedback = {
   schemaVersion: "feedback-minimal-4",
@@ -55,5 +55,37 @@ describe("stripImage and file names", () => {
     expect(dataUrlBytes(tiny)).toBeGreaterThan(0)
     const huge = "data:image/png;base64," + "A".repeat(12 * 1024 * 1024)
     expect(snapshotIfSmall(huge)).toBeUndefined()
+  })
+})
+
+describe("video feedback", () => {
+  test("attaches timestamp, microseconds and frame index to each mark", () => {
+    const feedback = {
+      schemaVersion: "video-feedback-1",
+      frames: [
+        {
+          id: "t-3200000",
+          timestampUs: 3_200_000,
+          timestampMs: 3200,
+          feedback: {
+            objects: [{ kind: "region", source: { x1: 10, y1: 20, x2: 80, y2: 90 }, annotations: [{ number: 1, text: "拖尾断开" }] }],
+          },
+        },
+      ],
+    }
+    expect(fromVideoFeedback(feedback, 30)).toEqual([
+      {
+        n: 1,
+        shape: "rect",
+        rect: { x1: 10, y1: 20, x2: 80, y2: 90 },
+        text: "拖尾断开",
+        frame: { timeMs: 3200, timeUs: 3_200_000, index: 96 },
+      },
+    ])
+  })
+
+  test("builds a per-frame snapshot name the submit route will accept", () => {
+    expect(frameFileName("clip", "c", { index: 96, timeMs: 3200 })).toBe("clip-c-f96.annotated.png")
+    expect(frameFileName("clip", "c", { timeMs: 3200 })).toBe("clip-c-t3200.annotated.png")
   })
 })

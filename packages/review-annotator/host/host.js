@@ -12,12 +12,13 @@
   const SHELL_KEYS = new Set(["j", "k", "p", "f"])
   const MapApi = globalThis.ReviewAnnotatorMap
   const Touch = globalThis.ReviewAnnotatorTouch
+  const Video = globalThis.ReviewAnnotatorVideo
 
   document.body.classList.add("review-host")
   document.documentElement.classList.add("review-host")
 
   const app = () => globalThis.EditHereWeb
-  let current = { item: "", asset: "", src: "", name: "" }
+  let current = { item: "", asset: "", src: "", name: "", kind: "image", fps: undefined }
   let lastRevision = -1
   let loadToken = 0
   const parentOrigin = () => (window.location.origin && window.location.origin !== "null" ? window.location.origin : "*")
@@ -45,6 +46,12 @@
     return blobToDataUrl(blob)
   }
 
+  function fpsOf() {
+    const editor = app()
+    const live = editor && typeof editor.estimatedFps === "function" ? editor.estimatedFps() : undefined
+    return current.fps || live
+  }
+
   function snapshot() {
     const editor = app()
     if (!editor || !current.src) {
@@ -56,7 +63,23 @@
     } catch (error) {
       feedback = undefined
     }
-    const annotations = feedback ? MapApi.fromFeedback(feedback) : []
+    const fps = fpsOf()
+    if (feedback && current.kind === "video") {
+      feedback.fps = fps
+      try {
+        const project = editor.project?.()
+        if (project && Array.isArray(project.frames)) {
+          feedback.frameNotes = project.frames.map((frame) => ({
+            id: frame.id,
+            timestampUs: frame.timestampUs,
+            notes: frame.notes,
+            layout: frame.layout,
+          }))
+        }
+      } catch (error) {}
+      feedback = MapApi.stripImage(feedback)
+    }
+    const annotations = feedback ? MapApi.annotationsOf(feedback, fps) : []
     return { item: current.item, asset: current.asset, annotations, raw: feedback }
   }
 
@@ -86,28 +109,48 @@
     const editor = app()
     if (!editor) throw new Error("标注器还没准备好")
     const token = ++loadToken
-    current = { item: message.item || "", asset: message.asset || "", src: message.src || "", name: message.name || message.asset || "" }
+    const kind = message.kind === "video" ? "video" : "image"
+    current = {
+      item: message.item || "",
+      asset: message.asset || "",
+      src: message.src || "",
+      name: message.name || message.asset || "",
+      kind,
+      fps: message.fps > 0 ? message.fps : undefined,
+    }
     lastRevision = -1
     editor.resetAgent?.()
     editor.bindAgent?.()
-    const dataUrl = await fetchImage(message.src)
-    if (token !== loadToken) return
     const draft = message.draft
     const raw = draft && draft.raw
-    if (raw && raw.objects) {
-      try {
-        await editor.loadAgentFeedback({
-          name: current.name,
-          image: dataUrl,
-          feedback: raw,
-          imageMode: "none",
-          preview: false,
-        })
-      } catch (error) {
+    if (kind === "video") {
+      if (current.fps) editor.setFps?.(current.fps)
+      const frames = raw ? MapApi.frameNotes(raw) : []
+      await editor.loadAgentVideo({
+        src: current.src,
+        name: current.name,
+        fps: current.fps,
+        frames: frames.filter((frame) => Number.isFinite(frame.timestampUs) && (frame.notes || frame.layout)),
+      })
+      if (current.fps) editor.setFps?.(current.fps)
+    } else {
+      const dataUrl = await fetchImage(message.src)
+      if (token !== loadToken) return
+      if (raw && raw.objects) {
+        try {
+          await editor.loadAgentFeedback({
+            name: current.name,
+            image: dataUrl,
+            feedback: raw,
+            imageMode: "none",
+            preview: false,
+          })
+        } catch (error) {
+          await editor.loadAgentImage({ name: current.name, image: dataUrl, imageMode: "none", preview: false })
+        }
+      } else {
         await editor.loadAgentImage({ name: current.name, image: dataUrl, imageMode: "none", preview: false })
       }
-    } else {
-      await editor.loadAgentImage({ name: current.name, image: dataUrl, imageMode: "none", preview: false })
     }
     if (token !== loadToken) return
     lastRevision = editor.projectRevision?.() ?? 0
@@ -117,12 +160,30 @@
 
   function exportNow(request) {
     const state = snapshot()
-    const dataUrl = renderSnapshot()
-    const file =
-      dataUrl && state.annotations.length
-        ? { name: MapApi.fileName(state.item, state.asset), dataUrl }
-        : undefined
-    post({ type: TYPE.exportRes, request, ...state, file })
+    const files = []
+    const editor = app()
+    if (current.kind === "video" && editor && typeof editor.annotatedFrames === "function") {
+      try {
+        let used = 0
+        for (const frame of editor.annotatedFrames() || []) {
+          const dataUrl = MapApi.snapshotIfSmall(frame.dataUrl)
+          if (!dataUrl) continue
+          const size = MapApi.dataUrlBytes(dataUrl)
+          if (used + size > MapApi.MAX_SNAPSHOT) continue
+          used += size
+          const name = MapApi.frameFileName(state.item, state.asset, frame)
+          files.push({ name, dataUrl })
+          for (const mark of state.annotations || []) {
+            if (mark.frame && mark.frame.timeUs === frame.timestampUs) mark.frame.image = name
+          }
+        }
+      } catch (error) {}
+    } else {
+      const dataUrl = renderSnapshot()
+      if (dataUrl && state.annotations.length)
+        files.push({ name: MapApi.fileName(state.item, state.asset), dataUrl })
+    }
+    post({ type: TYPE.exportRes, request, ...state, file: files[0], files })
   }
 
   window.addEventListener("message", (event) => {
@@ -156,6 +217,20 @@
       }
       if (typing || ctrl || event.altKey) return
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      const editor = app()
+      const video = current.kind === "video" || editor?.sessionKind?.() === "video"
+      if (video && (key === "," || key === "." || event.key === "，" || event.key === "。")) {
+        event.preventDefault()
+        event.stopPropagation()
+        editor?.stepFrame?.(key === "." || event.key === "。" ? 1 : -1)
+        return
+      }
+      if (video && event.code === "Space") {
+        event.preventDefault()
+        event.stopPropagation()
+        editor?.playPause?.()
+        return
+      }
       if (key === "g") {
         event.preventDefault()
         event.stopPropagation()

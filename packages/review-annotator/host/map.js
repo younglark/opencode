@@ -1,4 +1,4 @@
-// Host adapter (not upstream EditHere code). Maps feedback-minimal-4 objects
+// Host adapter (not upstream EditHere code). Maps feedback-minimal-4 and video-feedback-1 objects
 // to the review Annotation[] shape and strips embedded images from drafts.
 (function (root, factory) {
   const api = factory()
@@ -81,16 +81,71 @@
     return copy
   }
 
-  const FILE_OK = /^[A-Za-z0-9_.-]+$/
+  const partName = (value) =>
+    String(value || "asset")
+      .replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .replace(/_+/g, "_")
+      .slice(0, 40) || "asset"
+
   function fileName(item, asset) {
-    const part = (value) =>
-      String(value || "asset")
-        .replace(/[^A-Za-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .replace(/_+/g, "_")
-        .slice(0, 40) || "asset"
-    const name = `${part(item)}-${part(asset)}.annotated.png`
+    const name = `${partName(item)}-${partName(asset)}.annotated.png`
     return name.length <= 128 ? name : "annotated.png"
+  }
+
+  function frameFileName(item, asset, frame = {}) {
+    const tag =
+      Number.isFinite(frame.index) ? "f" + Math.round(frame.index) : "t" + Math.round(frame.timeMs || 0)
+    const name = `${partName(item)}-${partName(asset)}-${tag}.annotated.png`
+    return name.length <= 128 ? name : "frame.annotated.png"
+  }
+
+  function frameIndex(timeSec, fps) {
+    if (!(fps > 0) || !Number.isFinite(timeSec)) return undefined
+    return Math.max(0, Math.round(timeSec * fps - 0.5))
+  }
+
+  function fromVideoFeedback(feedback, fps) {
+    const frames = feedback?.frames
+    if (!Array.isArray(frames)) return fromFeedback(feedback)
+    const out = []
+    for (const frame of frames) {
+      const timeUs = Number.isFinite(frame.timestampUs) ? frame.timestampUs : undefined
+      const timeMs = Number.isFinite(frame.timestampMs)
+        ? frame.timestampMs
+        : timeUs !== undefined
+          ? Math.floor(timeUs / 1000)
+          : undefined
+      const timeSec = timeUs !== undefined ? timeUs / 1_000_000 : timeMs !== undefined ? timeMs / 1000 : undefined
+      const index = frameIndex(timeSec, fps ?? feedback.fps)
+      const marks = fromFeedback(frame.feedback)
+      for (const mark of marks) {
+        const meta = {}
+        if (timeMs !== undefined) meta.timeMs = timeMs
+        if (timeUs !== undefined) meta.timeUs = timeUs
+        if (index !== undefined) meta.index = index
+        if (Object.keys(meta).length) mark.frame = meta
+        out.push(mark)
+      }
+    }
+    return out
+  }
+
+  function annotationsOf(feedback, fps) {
+    if (feedback && (feedback.schemaVersion === "video-feedback-1" || Array.isArray(feedback.frames)))
+      return fromVideoFeedback(feedback, fps ?? feedback.fps)
+    return fromFeedback(feedback)
+  }
+
+  function frameNotes(raw) {
+    if (Array.isArray(raw?.frameNotes)) return raw.frameNotes
+    if (!Array.isArray(raw?.frames)) return []
+    return raw.frames.map((frame) => ({
+      id: frame.id,
+      timestampUs: frame.timestampUs,
+      notes: frame.notes,
+      layout: frame.layout,
+    }))
   }
 
   const MAX_SNAPSHOT = 8 * 1024 * 1024
@@ -107,12 +162,17 @@
     return dataUrl
   }
 
-  return { fromFeedback, stripImage, fileName, flatten, dataUrlBytes, snapshotIfSmall, MAX_SNAPSHOT }
+  return { fromFeedback, fromVideoFeedback, annotationsOf, stripImage, fileName, frameFileName, frameNotes, frameIndex, flatten, dataUrlBytes, snapshotIfSmall, MAX_SNAPSHOT }
 })
 
 export const fromFeedback = globalThis.ReviewAnnotatorMap.fromFeedback
+export const fromVideoFeedback = globalThis.ReviewAnnotatorMap.fromVideoFeedback
+export const annotationsOf = globalThis.ReviewAnnotatorMap.annotationsOf
 export const stripImage = globalThis.ReviewAnnotatorMap.stripImage
 export const fileName = globalThis.ReviewAnnotatorMap.fileName
+export const frameFileName = globalThis.ReviewAnnotatorMap.frameFileName
+export const frameNotes = globalThis.ReviewAnnotatorMap.frameNotes
+export const frameIndex = globalThis.ReviewAnnotatorMap.frameIndex
 export const flatten = globalThis.ReviewAnnotatorMap.flatten
 export const dataUrlBytes = globalThis.ReviewAnnotatorMap.dataUrlBytes
 export const snapshotIfSmall = globalThis.ReviewAnnotatorMap.snapshotIfSmall

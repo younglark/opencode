@@ -23,7 +23,7 @@ body.review-host #drop-overlay,
 body.review-host #drop-card,
 body.review-host #explode,
 body.review-host [data-mode="cut"],
-body.review-host #video-controls,
+body.review-host:not([data-media-kind="video"]) #video-controls,
 body.review-host #relink,
 body.review-host #save-project,
 body.review-host #preview,
@@ -61,4 +61,15 @@ body.review-host .status-bar {
   body.review-host .tools span {
     display: none;
   }
+}
+
+body.review-host[data-media-kind="video"] #video-controls {
+  display: block !important;
+}
+body.review-host #frame-prev,
+body.review-host #frame-next {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 20px;
+  line-height: 1;
 }

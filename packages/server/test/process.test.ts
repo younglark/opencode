@@ -296,6 +296,9 @@ it.live(
       // Reaches the review route, which rejects the unknown link itself.
       expect(yield* status("/api/review/unknown?t=token")).toBe(404)
       expect(yield* status("/api/review/unknown/extra")).toBe(401)
+      // The structured submit and asset paths are token-checked by the route, not the password.
+      expect(yield* status("/api/review/unknown/a/token/item/file.png")).toBe(404)
+      expect(yield* status("/api/review/unknown/a/token/item")).toBe(401)
 
       expect(
         ReviewBridge.publish({

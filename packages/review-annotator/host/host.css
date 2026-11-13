@@ -1,0 +1,64 @@
+/* Host appearance (not upstream EditHere code). Embedded in the approval shell; no product branding. */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+body.review-host {
+  min-height: 100%;
+}
+body.review-host .brand-text {
+  font-weight: 650;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  padding: 0 8px;
+}
+body.review-host .header-actions,
+body.review-host #open,
+body.review-host .save-control,
+body.review-host #export,
+body.review-host #empty,
+body.review-host #demo,
+body.review-host #drop-overlay,
+body.review-host #drop-card,
+body.review-host #explode,
+body.review-host [data-mode="cut"],
+body.review-host #video-controls,
+body.review-host #relink,
+body.review-host #save-project,
+body.review-host #preview,
+body.review-host #capture-page,
+body.review-host #add-pages,
+body.review-host #set-bar,
+body.review-host #file-input,
+body.review-host #video-input,
+body.review-host .local-badge {
+  display: none !important;
+}
+body.review-host main,
+body.review-host #workspace:not([hidden]) {
+  height: 100%;
+}
+body.review-host #workspace {
+  min-height: 0;
+}
+body.review-host .tools button,
+body.review-host .icon-button,
+body.review-host .view-controls button {
+  min-width: 44px;
+  min-height: 44px;
+}
+body.review-host .header {
+  padding-left: 8px;
+}
+body.review-host .status-bar {
+  font-size: 12px;
+}
+@media (max-width: 899px) {
+  body.review-host .sidebar {
+    max-height: 30vh;
+  }
+  body.review-host .tools span {
+    display: none;
+  }
+}

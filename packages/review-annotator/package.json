@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@opencode/review-annotator",
+  "version": "0.13.0",
+  "description": "Image annotator for remote review, vendored from EditHere and isolated under its original license",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "exports": {
+    "./map": "./host/map.js",
+    "./html": "./annotator.html"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "bun test"
+  }
+}

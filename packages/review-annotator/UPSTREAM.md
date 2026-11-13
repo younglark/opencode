@@ -1,0 +1,33 @@
+# Upstream
+
+Source: [Inginnng/EditHere](https://github.com/Inginnng/EditHere) web app, v0.13.0 at `3dab2c4`.
+
+License: PolyForm Noncommercial 1.0.0 (see `LICENSE` and `NOTICE`). This package is isolated from the MIT-licensed opencode fork on purpose. The EditHere name and logos are not licensed; they are not shown in the shipped UI. Commercial use of this code (including bundling it into a product used for a commercial game project) is an open question and needs a separate license from the author.
+
+Only the web image-annotation sources were copied. Desktop/Qt code, demos, MCP/DSH/agent session tools, marketing assets, and `node_modules` were left out. Icons under `icons/` are the shared Lucide-based set (ISC; their `LICENSE` is preserved).
+
+## Layout
+
+- `upstream/` — copies of `web/src` files, with the patches below.
+- `host/` — new adapter code (not upstream): host API, touch, mapping, optional video hook for M7.
+- `annotator.html` — build output of `build.mjs` (committed so the review page does not need a generate step).
+- `build.mjs` — adapted from `web/build.cjs`: no brand image injection, CSP allows same-origin images, host scripts appended, Required Notice left in an HTML comment.
+
+## Patches in `upstream/`
+
+### `app.js`
+
+- Added host hooks on `EditHereWeb`: `resetAgent`, `viewportFit`, `setZoom`, `changeMode`, `view`, `panBy`, `cancelInteraction`. No other behavior changes. Video loading and frame tools are untouched (M7).
+
+### `shell.html`
+
+- Title and header text are «标注»; EditHere lockup, icon, and favicon placeholders were removed.
+- CSP is `connect-src 'self'`, `img-src 'self' data: blob:`, `media-src 'self' data: blob:`, `frame-ancestors 'self'`.
+- The agent script placeholder was replaced by `MAP` / `TOUCH` / `VIDEO` / `HOST`.
+- Help footnote no longer points at the desktop product; it mentions shell shortcuts (P/F, J/K).
+
+### `help.js`
+
+- Two sentences that named the EditHere desktop app or told the user to “read EditHere feedback” were rewritten so the help text matches this host.
+
+No patches to `feedback.js`, `layout.js`, `detector.js`, `image-format.js`, `bundle.js`, `ui.js`, `style.css`, or `help.css`. The “explode” / layout tools remain in the source but are hidden by `host/host.css`.

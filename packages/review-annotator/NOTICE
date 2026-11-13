@@ -1,0 +1,22 @@
+EditHere (改这里)
+Copyright 2026 Inginnng. https://github.com/Inginnng/EditHere
+
+Required Notice: Copyright 2026 Inginnng (https://github.com/Inginnng/EditHere)
+
+EditHere is released under the PolyForm Noncommercial License 1.0.0
+(https://polyformproject.org/licenses/noncommercial/1.0.0). Free use is
+limited to noncommercial purposes; commercial use requires a separate
+license from the author.
+
+The EditHere name, logo, and brand marks are not licensed under these terms.
+
+Qt, MinGW, and other third-party components remain under their own licenses;
+see THIRD-PARTY-NOTICES.md (under packaging/ in the source tree).
+
+Commercial licensing, priority support, and custom development: inginnng@163.com
+
+This directory is a modified copy of the EditHere web app, vendored for
+opencode remote review image annotation. Product names and logos have been
+removed from the shipped UI. The original license and the Required Notice
+above are unchanged. Commercial use of this code still requires a separate
+license from the author.

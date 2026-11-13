@@ -2,6 +2,7 @@ export * as ReviewPage from "./page.js"
 
 import type { ReviewContext } from "./context.js"
 import type { ReviewDecide } from "./decide.js"
+import { ReviewRequest } from "./request.js"
 import type { ReviewState } from "./state.js"
 
 export interface FileDiff {
@@ -46,6 +47,8 @@ textarea.overall{min-height:120px}
 button{width:100%;padding:14px;font-size:17px;border:0;border-radius:10px;background:var(--accent);color:#fff;margin-top:12px;min-height:48px}
 .state{border-left:4px solid var(--accent)}.state.ok{border-left-color:var(--ok)}.state.warn{border-left-color:var(--warn)}.state.bad{border-left-color:var(--bad)}
 @media (min-width:640px){.files{flex-direction:row;flex-wrap:wrap}.files a{flex:1 1 240px}}
+.assets{display:flex;flex-direction:column;gap:12px;margin-top:8px}figure{margin:0}figure img,figure video{display:block;max-width:100%;height:auto;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+figcaption{font-size:13px;color:var(--muted);margin-top:4px;word-break:break-all}.wait{border-left:4px solid var(--warn)}
 `
 
 function layout(title: string, body: string) {
@@ -116,6 +119,31 @@ ${request ? `<div class="request">${escape(request)}</div>` : `<p class="muted">
 ${turns}</section>`
 }
 
+/** Where the page loads a snapshotted file: the token rides in the path so a custom page's relative links work. */
+export function assetURL(reviewID: string, token: string, item: string, file: string) {
+  const path = file.split("/").map(encodeURIComponent).join("/")
+  return `/api/review/${encodeURIComponent(reviewID)}/a/${encodeURIComponent(token)}/${encodeURIComponent(item)}/${path}`
+}
+
+function itemHTML(review: ReviewState.Review, token: string, item: ReviewRequest.StoredItem) {
+  const url = (file: string) => escape(assetURL(review.id, token, item.id, file))
+  const note = item.note ? `<div class="summary">${escape(item.note)}</div>` : ""
+  if (item.kind === "custom" && item.custom)
+    return `<section class="card"><h2>${escape(item.title)}</h2>${note}<p><a href="${url(item.custom.entry)}" target="_blank" rel="noopener">打开页面</a></p></section>`
+  const assets = item.assets
+    .map((asset) => {
+      const caption = `<figcaption>${escape(asset.label ? `${asset.label} · ${asset.id}` : asset.id)}</figcaption>`
+      if (item.kind === "video")
+        return `<figure><video controls playsinline preload="metadata" src="${url(asset.stored.file)}"></video>${caption}</figure>`
+      const compare = asset.compare
+        ? `<details class="more"><summary>对比参考图</summary><img loading="lazy" alt="参考图" src="${url(asset.compare.file)}"></details>`
+        : ""
+      return `<figure><img loading="lazy" alt="${escape(asset.id)}" src="${url(asset.stored.file)}">${caption}${compare}</figure>`
+    })
+    .join("")
+  return `<section class="card"><h2>${escape(item.title)}</h2>${note}<div class="assets">${assets}</div></section>`
+}
+
 export function approval(input: {
   readonly review: ReviewState.Review
   readonly token: string
@@ -125,13 +153,21 @@ export function approval(input: {
 }) {
   const review = input.review
   const action = `/api/review/${encodeURIComponent(review.id)}`
+  const items = review.request?.items ?? [ReviewRequest.diffItem(review.id)]
   return layout(
     `审查：${review.title}`,
     `<h1>${escape(review.title)}</h1>
 <div class="muted">${escape(review.directory)} · 有效期至 ${escape(new Date(review.expiresAt).toLocaleString("zh-CN", { hour12: false }))}</div>
 ${contextHTML(review, input.context)}
+${review.origin === "agent" ? `<section class="card wait"><h2>Agent 的状态</h2><p>${escape(ReviewRequest.describeWait(review.request?.wait, review.createdAt))}</p></section>` : ""}
 <section class="card"><h2>本轮摘要</h2><div class="summary">${escape(review.summary)}</div></section>
-<section class="card"><h2>改动</h2>${input.diffError ? `<p class="muted">${escape(input.diffError)}</p>` : diffHTML(input.diffs)}</section>
+${items
+  .map((item) =>
+    item.kind === "diff"
+      ? `<section class="card"><h2>改动</h2>${input.diffError ? `<p class="muted">${escape(input.diffError)}</p>` : diffHTML(input.diffs)}</section>`
+      : itemHTML(review, input.token, item),
+  )
+  .join("\n")}
 <form id="review" class="card" method="post" action="${escape(action)}">
 <input type="hidden" name="t" value="${escape(input.token)}">
 <label class="opt"><input type="radio" name="decision" value="continue" checked> 没问题，继续</label>

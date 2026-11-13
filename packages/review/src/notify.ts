@@ -72,6 +72,19 @@ function project(directory: string) {
   return directory.split(/[\\/]/).filter(Boolean).at(-1) ?? directory
 }
 
+/**
+ * The links a channel should show: when both a public and a LAN address exist they are labeled 外网 and 局域网,
+ * and they share the same token. A server with only one usable address sends that one, unlabeled.
+ */
+export function links(item: Item): ReadonlyArray<{ readonly text: string; readonly href: string }> {
+  if (item.lan)
+    return [
+      { text: "外网", href: item.url },
+      { text: "局域网", href: item.lan },
+    ]
+  return [{ text: "打开审查页", href: item.url }]
+}
+
 /** Feishu custom bot, rich-text `post`. */
 export function feishu(items: ReadonlyArray<Item>) {
   return {
@@ -88,7 +101,7 @@ export function feishu(items: ReadonlyArray<Item>) {
               },
             ],
             [{ tag: "text", text: clip(item.summary) }],
-            [{ tag: "a", text: "打开审查页", href: item.url }],
+            ...links(item).map((link) => [{ tag: "a", text: link.text, href: link.href }]),
           ]),
         },
       },
@@ -104,7 +117,9 @@ export function wecom(items: ReadonlyArray<Item>) {
       "",
       `${items.length > 1 ? `${index + 1}. ` : ""}<font color="info">${project(item.directory)}</font> ${item.title}`,
       `> ${clip(item.summary).replace(/\n+/g, " ")}`,
-      `[打开审查页](${item.url})`,
+      links(item)
+        .map((link) => `[${link.text}](${link.href})`)
+        .join(" · "),
     )
   })
   return { msgtype: "markdown", markdown: { content: lines.join("\n") } }

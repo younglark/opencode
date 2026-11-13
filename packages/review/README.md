@@ -16,7 +16,7 @@ for a while, and writes the reviewer's decision back into the session.
     the reply's `code` must be `0` ([docs](https://sct.ftqq.com/docs/getting-started/sendkey/)). The link also goes in
     `short`, since WeChat may show only the card. Turbo's free tier allows about 5 messages a day.
   - Reviews that finish together are merged into one message per channel. When both an OpenTunnel and a LAN address
-    exist, the WeChat messages carry both links.
+    exist, every channel carries both links, labeled 外网 and 局域网, with the same token; a server with only one address sends that one.
 - The plugin (this package's default export) owns settings, timers and review records in its plugin storage.
   Timers are stored as absolute deadlines and restored when a Location starts again.
 - The server layer (`packages/server/src/review.ts`) owns links and notifications, because only it knows the LAN

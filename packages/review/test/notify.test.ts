@@ -73,16 +73,35 @@ describe("notifier", () => {
     expect(feishu.msg_type).toBe("post")
     expect(feishu.content.post.zh_cn.title).toBe("opencode：3 个会话等待审查")
     const links = feishu.content.post.zh_cn.content.flat().filter((node: any) => node.tag === "a")
-    expect(links.map((node: any) => node.href)).toEqual([
-      "https://abc.tunnel.example/api/review/r1?t=tok1",
-      "https://abc.tunnel.example/api/review/r2?t=tok2",
-      "https://abc.tunnel.example/api/review/r3?t=tok3",
+    expect(links.map((node: any) => [node.text, node.href])).toEqual([
+      ["外网", "https://abc.tunnel.example/api/review/r1?t=tok1"],
+      ["局域网", "http://192.168.1.5:4096/api/review/r1?t=tok1"],
+      ["外网", "https://abc.tunnel.example/api/review/r2?t=tok2"],
+      ["局域网", "http://192.168.1.5:4096/api/review/r2?t=tok2"],
+      ["外网", "https://abc.tunnel.example/api/review/r3?t=tok3"],
+      ["局域网", "http://192.168.1.5:4096/api/review/r3?t=tok3"],
     ])
     const wecom = calls.find((call) => call.url === WECOM)!.body
     expect(wecom.msgtype).toBe("markdown")
     expect(wecom.markdown.content).toContain("**opencode：3 个会话等待审查**")
-    expect(wecom.markdown.content).toContain("[打开审查页](https://abc.tunnel.example/api/review/r2?t=tok2)")
+    expect(wecom.markdown.content).toContain("[外网](https://abc.tunnel.example/api/review/r2?t=tok2)")
+    expect(wecom.markdown.content).toContain("[局域网](http://192.168.1.5:4096/api/review/r2?t=tok2)")
     expect(wecom.markdown.content).toContain("project3")
+  })
+
+  test("Feishu and WeCom send only the one available link when there is no pair", async () => {
+    const { notifier, calls } = setup({ urls: ["http://127.0.0.1:4096", "http://192.168.1.5:4096"] })
+    notifier.push(ready(1))
+    await notifier.flush()
+    const feishu = calls.find((call) => call.url === FEISHU)!.body
+    const links = feishu.content.post.zh_cn.content.flat().filter((node: any) => node.tag === "a")
+    expect(links.map((node: any) => [node.text, node.href])).toEqual([
+      ["打开审查页", "http://192.168.1.5:4096/api/review/r1?t=tok1"],
+    ])
+    const wecom = calls.find((call) => call.url === WECOM)!.body
+    expect(wecom.markdown.content).toContain("[打开审查页](http://192.168.1.5:4096/api/review/r1?t=tok1)")
+    expect(wecom.markdown.content).not.toContain("外网")
+    expect(wecom.markdown.content).not.toContain("局域网")
   })
 
   test("a single review gets its own title, and a later link for the same session replaces the earlier one", async () => {

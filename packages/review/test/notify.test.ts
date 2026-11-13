@@ -14,7 +14,20 @@ const ready = (n: number): ReviewBridge.Ready => ({
 const FEISHU = "https://open.feishu.cn/open-apis/bot/v2/hook/secret-feishu"
 const WECOM = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-wecom"
 
-function setup(options: { env?: Record<string, string | undefined>; urls?: string[]; status?: number } = {}) {
+const PUSHPLUS_TOKEN = "secret-pushplus-token"
+const SCT_KEY = "SCTsecretkey123"
+const SC3_KEY = "sctp4567tsecretkey"
+
+type Reply = { status?: number; text?: string; throws?: string }
+
+function setup(
+  options: {
+    env?: Record<string, string | undefined>
+    urls?: string[]
+    status?: number
+    reply?: (url: string) => Reply
+  } = {},
+) {
   const calls: { url: string; body: any }[] = []
   const logs: string[] = []
   const timers: (() => void)[] = []
@@ -23,7 +36,10 @@ function setup(options: { env?: Record<string, string | undefined>; urls?: strin
     urls: () => options.urls ?? ["http://127.0.0.1:4096", "http://192.168.1.5:4096", "https://abc.tunnel.example"],
     fetch: async (url, init) => {
       calls.push({ url, body: JSON.parse(init.body) })
-      return { ok: (options.status ?? 200) < 400, status: options.status ?? 200, text: async () => "" }
+      const reply = options.reply?.(url) ?? { status: options.status }
+      if (reply.throws) throw new Error(reply.throws)
+      const status = reply.status ?? 200
+      return { ok: status < 400, status, text: async () => reply.text ?? "" }
     },
     setTimer: (callback) => timers.push(callback),
     log: (message, details) => logs.push(`${message} ${JSON.stringify(details ?? {})}`),
@@ -93,6 +109,127 @@ describe("notifier", () => {
     await unconfigured.notifier.flush()
     expect(unconfigured.calls).toHaveLength(0)
     expect(unconfigured.logs[0]).toContain("no webhook configured")
+  })
+})
+
+describe("wechat channels", () => {
+  const okReply = (url: string): Reply =>
+    url === ReviewNotify.PUSHPLUS_URL ? { text: '{"code":200,"msg":"请求成功","data":"abc"}' } : { text: '{"code":0}' }
+
+  test("PushPlus posts token, title, html content with public and LAN links", async () => {
+    const { notifier, calls, logs } = setup({ env: { [ReviewNotify.PUSHPLUS_ENV]: PUSHPLUS_TOKEN }, reply: okReply })
+    notifier.push(ready(1))
+    notifier.push(ready(2))
+    await notifier.flush()
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe("https://www.pushplus.plus/send")
+    const body = calls[0].body
+    expect(body.token).toBe(PUSHPLUS_TOKEN)
+    expect(body.template).toBe("html")
+    expect(body.title).toBe("opencode：2 个会话等待审查")
+    expect(body.content).toContain('<a href="https://abc.tunnel.example/api/review/r1?t=tok1">打开审查页</a>')
+    expect(body.content).toContain('<a href="http://192.168.1.5:4096/api/review/r2?t=tok2">局域网链接</a>')
+    expect(body.content).toContain("Summary 2")
+    expect(body.content).toContain("【project1】Session 1")
+    expect(logs).toEqual([])
+  })
+
+  test("PushPlus escapes html in titles and summaries", () => {
+    const body = ReviewNotify.pushplus("t", [
+      { ...ready(1), title: "<b>x</b>", summary: 'a & "b"', url: "https://x/api/review/r?t=a&b" },
+    ])
+    expect(body.content).toContain("&#60;b&#62;x&#60;/b&#62;")
+    expect(body.content).toContain("a &#38; &#34;b&#34;")
+    expect(body.content).toContain('href="https://x/api/review/r?t=a&#38;b"')
+  })
+
+  test("Server酱 Turbo key posts title, short with the link, and markdown desp", async () => {
+    const { notifier, calls, logs } = setup({ env: { [ReviewNotify.SERVERCHAN_ENV]: SCT_KEY }, reply: okReply })
+    notifier.push(ready(1))
+    await notifier.flush()
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`https://sctapi.ftqq.com/${SCT_KEY}.send`)
+    const body = calls[0].body
+    expect(body.title).toBe("opencode 等待审查：Session 1")
+    expect(body.title).not.toContain("\n")
+    expect(body.short).toBe("Session 1 https://abc.tunnel.example/api/review/r1?t=tok1")
+    expect(body.desp).toContain("[打开审查页](https://abc.tunnel.example/api/review/r1?t=tok1)")
+    expect(body.desp).toContain("[局域网链接](http://192.168.1.5:4096/api/review/r1?t=tok1)")
+    expect(body.desp).toContain("Summary 1")
+    expect(logs).toEqual([])
+  })
+
+  test("Server酱 merged message keeps a short, single-line title and the first link in short", () => {
+    const items = [1, 2, 3].map((n) => ({ ...ready(n), url: `https://x/r${n}` }))
+    const body = ReviewNotify.serverchan(items)
+    expect(body.title).toBe("opencode：3 个会话等待审查")
+    expect(body.short).toBe("3 个会话 · https://x/r1")
+    expect(body.desp).toContain("### 3. 【project3】Session 3")
+    const long = ReviewNotify.serverchan([{ ...ready(1), title: "x".repeat(80) + "\nmore", url: "https://x/r" }])
+    expect(long.title.length).toBeLessThanOrEqual(32)
+    expect(long.title).not.toContain("\n")
+  })
+
+  test("Server酱³ sctp keys use the uid endpoint; malformed sctp keys are skipped", async () => {
+    expect(ReviewNotify.serverchanURL(SC3_KEY)).toBe(`https://4567.push.ft07.com/send/${SC3_KEY}.send`)
+    expect(ReviewNotify.serverchanURL("SCT1")).toBe("https://sctapi.ftqq.com/SCT1.send")
+    expect(ReviewNotify.serverchanURL("sctpbroken")).toBeUndefined()
+
+    const malformed = setup({ env: { [ReviewNotify.SERVERCHAN_ENV]: "sctpbroken" } })
+    malformed.notifier.push(ready(1))
+    await malformed.notifier.flush()
+    expect(malformed.calls).toHaveLength(0)
+    expect(malformed.logs.join("\n")).toContain("malformed")
+    expect(malformed.logs.join("\n")).not.toContain("sctpbroken")
+  })
+
+  test("logs JSON error codes, HTTP failures and network errors without the token or key", async () => {
+    const env = { [ReviewNotify.PUSHPLUS_ENV]: PUSHPLUS_TOKEN, [ReviewNotify.SERVERCHAN_ENV]: SCT_KEY }
+    const coded = setup({
+      env,
+      reply: (url) =>
+        url === ReviewNotify.PUSHPLUS_URL
+          ? { text: '{"code":903,"msg":"无效的用户token"}' }
+          : { text: '{"code":40001}' },
+    })
+    coded.notifier.push(ready(1))
+    await coded.notifier.flush()
+    expect(coded.calls).toHaveLength(2)
+    expect(coded.logs).toHaveLength(2)
+    expect(coded.logs.find((line) => line.includes("pushplus"))).toContain('"code":903')
+    expect(coded.logs.find((line) => line.includes("serverchan"))).toContain('"code":40001')
+
+    const broken = setup({
+      env,
+      reply: (url) => (url === ReviewNotify.PUSHPLUS_URL ? { status: 502 } : { throws: "connect ECONNREFUSED" }),
+    })
+    broken.notifier.push(ready(1))
+    await broken.notifier.flush()
+    expect(broken.logs).toHaveLength(2)
+    expect(broken.logs.join("\n")).toContain('"status":502')
+    expect(broken.logs.join("\n")).toContain("ECONNREFUSED")
+
+    const garbled = setup({ env, reply: () => ({ text: "<html>oops</html>" }) })
+    garbled.notifier.push(ready(1))
+    await garbled.notifier.flush()
+    expect(garbled.logs).toHaveLength(2)
+
+    for (const logs of [coded.logs, broken.logs, garbled.logs]) {
+      expect(logs.join("\n")).not.toContain("secret")
+      expect(logs.join("\n")).not.toContain(SCT_KEY)
+    }
+  })
+
+  test("a LAN-only server sends just the LAN link", async () => {
+    const { notifier, calls } = setup({
+      env: { [ReviewNotify.SERVERCHAN_ENV]: SCT_KEY },
+      urls: ["http://127.0.0.1:4096", "http://192.168.1.5:4096"],
+      reply: okReply,
+    })
+    notifier.push(ready(1))
+    await notifier.flush()
+    expect(calls[0].body.desp).toContain("[打开审查页](http://192.168.1.5:4096/api/review/r1?t=tok1)")
+    expect(calls[0].body.desp).not.toContain("局域网链接")
   })
 })
 

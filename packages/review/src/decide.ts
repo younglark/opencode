@@ -21,8 +21,13 @@ export function check(input: {
   if (!review || !ReviewToken.matches(input.token, review.tokenHash)) return "invalid"
   if (review.status === "submitted") return "used"
   if (review.status === "superseded") return "continued"
-  if (input.now >= review.expiresAt) return "expired"
+  if (review.status === "closed" || input.now >= review.expiresAt) return "expired"
   if (!input.session) return "invalid"
-  if (ReviewState.running(input.session) || ReviewState.marker(input.session) !== review.marker) return "continued"
+  // An agent asks for review while it works, so only idle / `now` reviews end when the desktop moves on.
+  if (
+    ReviewState.followsSession(review) &&
+    (ReviewState.running(input.session) || ReviewState.marker(input.session) !== review.marker)
+  )
+    return "continued"
   return "ok"
 }

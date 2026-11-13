@@ -174,6 +174,22 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/experimental/migration/v1") return json({ status: "completed" })
     // The prompt footer reads the routed session's goal from the goal plugin's RPC; no fixture sets one.
     if (url.pathname === "/api/rpc/opencode.goal/get") return json({ output: null })
+    // The remote review plugin reads its settings on startup to show the mode beside the prompt; off by default.
+    if (url.pathname === "/api/rpc/opencode.review/status")
+      return json({
+        output: {
+          enabled: false,
+          durationMs: 600_000,
+          addressesKnown: false,
+          lan: null,
+          public: null,
+          channels: [],
+          pending: 0,
+          timerAt: null,
+          reviewUntil: null,
+          hints: [],
+        },
+      })
     throw new Error(`unexpected request: ${url.pathname}`)
   }
   fetch.preconnect = () => {}

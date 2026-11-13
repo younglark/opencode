@@ -19,6 +19,7 @@ import { isAllowedCorsOrigin } from "./cors"
 import { authorizedRequest, unauthorizedResponse } from "./middleware/authorization"
 import { withoutParentSpan } from "./request-tracing"
 import { RequestSite } from "./request-site"
+import { ServerReview } from "./review"
 import { createRoutes } from "./routes"
 import { ServerInfo } from "./server-info"
 import { Status } from "./service-status"
@@ -200,6 +201,8 @@ function dispatch(
     }
     if (
       !isPairingConnectURL(url) &&
+      // Review links carry their own one-time token instead of the server password.
+      !ServerReview.isReviewURL(url) &&
       (!ready ||
         (!hasPtyConnectTicketURL(url) && !hasPersistentPtyConnectTicketURL(url) && !hasMcpClientTicketURL(url))) &&
       !(yield* authorizedRequest(request, auth))

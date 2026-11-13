@@ -2,6 +2,7 @@ import { expect } from "bun:test"
 import { Effect } from "effect"
 import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { it } from "../../core/test/lib/effect"
+import { ReviewBridge, ReviewNotify } from "@opencode/review"
 import { ServerProcess } from "../src/process"
 
 it.live("authenticates API requests behind the frontend transform while allowing browser preflight", () =>
@@ -258,4 +259,54 @@ it.live("server info lists remote URLs alongside local addresses while they are 
     remote.urls = []
     expect((yield* info()).urls).toEqual([base])
   }),
+)
+
+it.live("review links bypass the server password and notifications link through the remote URL", () =>
+  Effect.gen(function* () {
+    const received: unknown[] = []
+    const hook = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        received.push(await request.json())
+        return new Response("{}")
+      },
+    })
+    yield* Effect.addFinalizer(() => Effect.sync(() => void hook.stop(true)))
+    const previous = process.env[ReviewNotify.FEISHU_ENV]
+    process.env[ReviewNotify.FEISHU_ENV] = `http://127.0.0.1:${hook.port}/hook`
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (previous === undefined) delete process.env[ReviewNotify.FEISHU_ENV]
+        else process.env[ReviewNotify.FEISHU_ENV] = previous
+      }),
+    )
+    const server = yield* ServerProcess.start<never, never>(
+      { hostname: "127.0.0.1", port: 0, password: "secret", database: { path: ":memory:" } },
+      undefined,
+      undefined,
+      () => ["https://example.opentunnel.xyz"],
+    )
+    const base = HttpServer.formatAddress(server.address)
+    const status = (path: string) => Effect.promise(() => fetch(new URL(path, base)).then((response) => response.status))
+
+    expect(yield* status("/api/session")).toBe(401)
+    // Reaches the review route, which rejects the unknown link itself.
+    expect(yield* status("/api/review/unknown?t=token")).toBe(404)
+    expect(yield* status("/api/review/unknown/extra")).toBe(401)
+
+    expect(
+      ReviewBridge.publish({
+        reviewID: "rev",
+        token: "tok",
+        sessionID: "ses",
+        title: "Title",
+        summary: "Summary",
+        directory: "/work/project",
+      }),
+    ).toBe(true)
+    for (let attempt = 0; attempt < 100 && received.length === 0; attempt++) yield* Effect.sleep("100 millis")
+    expect(JSON.stringify(received)).toContain("https://example.opentunnel.xyz/api/review/rev?t=tok")
+  }),
+  // Notifications wait out the merge window before sending.
+  20_000,
 )

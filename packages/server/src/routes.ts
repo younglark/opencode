@@ -52,6 +52,7 @@ import { layer } from "./location"
 import { formLocationLayer } from "./middleware/form-location"
 import { sessionLocationLayer } from "./middleware/session-location"
 import { ServerInfo } from "./server-info"
+import { ServerReview } from "./review"
 import type { ServerOptions } from "./options"
 
 const applicationServiceNodes = [
@@ -200,6 +201,7 @@ function makeRoutes<AuthError, AuthServices>(
         Layer.provide(schemaErrorLayer),
         Layer.provide(auth),
         HttpRouter.provideRequest(requestServices),
+        Layer.merge(ServerReview.layer(serviceURLs)),
         Layer.provideMerge(services),
         Layer.provideMerge(HttpRouter.layer),
       )

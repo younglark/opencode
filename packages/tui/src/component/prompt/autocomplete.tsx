@@ -499,8 +499,15 @@ export function Autocomplete(props: {
       }))
     })
     const commandNames = new Set<string>()
+    // A client slash command with arguments wins on submit, so a server command of the same name is a duplicate row.
+    const clientNames = new Set(
+      keymapCommands().flatMap((command) =>
+        command.slash?.arguments ? [command.slash.name, ...(command.slash.aliases ?? [])] : [],
+      ),
+    )
 
     for (const serverCommand of data.location.command.list(location.current) ?? []) {
+      if (clientNames.has(serverCommand.name)) continue
       commandNames.add(serverCommand.name)
       results.push({
         display: "/" + serverCommand.name,

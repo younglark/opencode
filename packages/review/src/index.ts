@@ -5,6 +5,7 @@ import { ReviewBridge } from "./bridge.js"
 import { ReviewCommand } from "./command.js"
 import { ReviewController } from "./controller.js"
 import { ReviewInbox } from "./inbox.js"
+import { ReviewRpc } from "./rpc.js"
 import { ReviewState } from "./state.js"
 import { ReviewSummary } from "./summary.js"
 
@@ -18,7 +19,9 @@ export { ReviewHandler } from "./handler.js"
 export { ReviewInbox } from "./inbox.js"
 export { ReviewNotify } from "./notify.js"
 export { ReviewPage } from "./page.js"
+export { ReviewRpc } from "./rpc.js"
 export { ReviewState } from "./state.js"
+export { ReviewStatus } from "./status.js"
 export { ReviewToken } from "./token.js"
 
 const millis = (value: DateTime.Utc | undefined) => (value === undefined ? undefined : DateTime.toEpochMillis(value))
@@ -68,7 +71,21 @@ export default Plugin.define({
         schedule: (sessionID, delayMs, effect) =>
           FiberMap.run(timers, sessionID, Effect.sleep(delayMs).pipe(Effect.andThen(effect))).pipe(Effect.asVoid),
         cancel: (sessionID) => FiberMap.remove(timers, sessionID),
+        server: ReviewBridge.server,
       })
+
+      // Clients follow settings through `changed`; every command may have written them.
+      const rpc = yield* ctx.rpc
+        .register(ReviewRpc.Definition, {
+          status: (input) => controller.snapshot(input.sessionID),
+          run: (input) =>
+            controller.run(input.sessionID, input.text).pipe(Effect.tap((result) => changed(result.status))),
+        })
+        .pipe(Effect.orDie)
+      const changed = (status: ReviewRpc.Status): Effect.Effect<void> =>
+        rpc.events
+          .emit("changed", { enabled: status.enabled, durationMs: status.durationMs })
+          .pipe(Effect.catchCause((cause) => Effect.logWarning("review: failed to publish a change", { cause })))
 
       const warn = (message: string, sessionID: string) =>
         Effect.catchCause((cause: unknown) => Effect.logWarning(message, { sessionID, cause }))
@@ -123,7 +140,9 @@ export default Plugin.define({
             Effect.gen(function* () {
               const text = input.prompt.text
               const result = yield* controller.command(input.sessionID, text)
-              // Like /goal, status text reaches the user through the command's failure message.
+              yield* controller.snapshot().pipe(Effect.flatMap(changed))
+              // Like /goal, status text reaches the user through the command's failure message. The TUI calls
+              // the RPC instead and shows a toast; this path serves other clients.
               if (ReviewCommand.parse(text).type === "status") return yield* Effect.fail(new Error(result))
               yield* Effect.logInfo(result, { sessionID: input.sessionID })
             }),

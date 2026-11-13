@@ -3,10 +3,13 @@ import { Effect } from "effect"
 import type { ReviewBridge } from "../src/bridge.js"
 import { ReviewController } from "../src/controller.js"
 import { ReviewState } from "../src/state.js"
+import type { ReviewStatus } from "../src/status.js"
 import { ReviewToken } from "../src/token.js"
 import { memoryStorage, run } from "./fixture.js"
 
-function harness(options: { directory?: string; summary?: () => Effect.Effect<string> } = {}) {
+function harness(
+  options: { directory?: string; summary?: () => Effect.Effect<string>; server?: ReviewStatus.Server } = {},
+) {
   const storage = memoryStorage()
   const clock = { now: 1_000_000 }
   const sessions = new Map<string, ReviewController.SessionView>()
@@ -21,6 +24,7 @@ function harness(options: { directory?: string; summary?: () => Effect.Effect<st
     publish: (review) => Effect.sync(() => (published.push(review), true)),
     schedule: (id, delayMs, effect) => Effect.sync(() => void scheduled.set(id, { delayMs, effect })),
     cancel: (id) => Effect.sync(() => void scheduled.delete(id)),
+    server: () => options.server,
   })
   const idleSession = (id: string, busy = 500, extra: Partial<ReviewController.SessionView> = {}) =>
     sessions.set(id, { id, title: `title ${id}`, directory: "/repo", busy, idle: busy + 100, ...extra })
@@ -45,7 +49,7 @@ describe("settings and command", () => {
     await run(h.controller.command("s1", "on"))
     expect(await run(h.controller.settings)).toEqual({ enabled: true, durationMs: 900_000 })
     const status = await run(h.controller.command("s1", ""))
-    expect(status).toContain("on, idle 15m")
+    expect(status).toContain("Remote review on · idle 15m")
     expect(await Effect.runPromise(Effect.flip(h.controller.command("s1", "xyz")))).toBeInstanceOf(Error)
   })
 })
@@ -177,5 +181,65 @@ describe("timer", () => {
     expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toBe(second.reviewID)
     h.idleSession("busy", 900, { idle: 100 })
     expect(await Effect.runPromise(Effect.flip(h.controller.command("busy", "now")))).toBeInstanceOf(Error)
+  })
+})
+
+describe("rpc status and run", () => {
+  const lan = {
+    urls: ["http://127.0.0.1:4096", "http://192.168.1.5:4096"],
+    channels: ["OPENCODE_REVIEW_FEISHU_WEBHOOK"],
+  }
+
+  test("status reports settings, this session's timer, open links and what is missing", async () => {
+    const h = harness({ server: { urls: ["http://127.0.0.1:4096"], channels: [] } })
+    await h.enable()
+    h.idleSession("s1")
+    await run(h.controller.finished("s1"))
+    const status = await run(h.controller.snapshot("s1"))
+    expect(status).toMatchObject({
+      enabled: true,
+      durationMs: 600_000,
+      addressesKnown: true,
+      lan: null,
+      public: null,
+      channels: [],
+      pending: 0,
+      timerAt: 1_000_000 + 600_000,
+      reviewUntil: null,
+    })
+    expect(status.hints.map((hint) => hint.level)).toEqual(["warning", "warning"])
+    expect(status.hints[0].message).toContain("opencode service set hostname 0.0.0.0")
+    expect(status.hints[0].message).toContain("opencode service set remote true")
+  })
+
+  test("run turns user errors into ok: false and returns fresh status", async () => {
+    const h = harness({ server: lan })
+    const on = await run(h.controller.run("s1", "5m"))
+    expect(on).toMatchObject({
+      ok: true,
+      status: { enabled: true, durationMs: 300_000, lan: "http://192.168.1.5:4096" },
+    })
+    expect(on.status.hints.map((hint) => hint.level)).toEqual(["info"])
+    const bad = await run(h.controller.run("s1", "soon"))
+    expect(bad.ok).toBe(false)
+    expect(bad.message).toContain("Usage: /review-remote")
+  })
+
+  test("now refuses a loopback-only server and says what to run, without opening a review", async () => {
+    const h = harness({ server: { urls: ["http://127.0.0.1:4096"], channels: ["x"] } })
+    h.idleSession("s1")
+    const result = await run(h.controller.run("s1", "now"))
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("opencode service set remote true")
+    expect(h.published).toHaveLength(0)
+  })
+
+  test("now counts as a pending link; reachability is unknown without a server layer", async () => {
+    const h = harness()
+    h.idleSession("s1")
+    const result = await run(h.controller.run("s1", "now"))
+    expect(result.ok).toBe(true)
+    expect(result.status).toMatchObject({ addressesKnown: false, pending: 1, hints: [] })
+    expect(result.status.reviewUntil).toBe(1_000_000 + ReviewState.DEFAULT_TTL)
   })
 })

@@ -3,7 +3,7 @@ export * as ReviewCommand from "./command.js"
 import { ReviewDuration } from "./duration.js"
 
 export const NAME = "review-remote"
-export const USAGE = "Usage: /review-remote <duration, e.g. 30s | 15m | 2h> | on | off | now | status"
+export const USAGE = "Usage: /review-remote <duration, e.g. 5m | 15m | 2h> | on | off | now | status"
 
 export type Action =
   | { readonly type: "status" }

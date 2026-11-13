@@ -4,7 +4,9 @@ import { Effect, Schema } from "effect"
 import type { ReviewBridge } from "./bridge.js"
 import { ReviewCommand } from "./command.js"
 import { ReviewDuration } from "./duration.js"
+import type { ReviewRpc } from "./rpc.js"
 import { ReviewState } from "./state.js"
+import { ReviewStatus } from "./status.js"
 import { ReviewToken } from "./token.js"
 
 export interface SessionView {
@@ -43,6 +45,8 @@ export interface Deps {
   readonly schedule: (sessionID: string, delayMs: number, effect: Effect.Effect<void>) => Effect.Effect<void>
   readonly cancel: (sessionID: string) => Effect.Effect<void>
   readonly ttlMs?: number
+  /** The server layer's URLs and webhooks; undefined when none runs, which leaves reachability unknown. */
+  readonly server?: () => ReviewStatus.Server | undefined
 }
 
 const json = (value: unknown) => value as Schema.Json
@@ -197,20 +201,50 @@ export function make(deps: Deps) {
     } while (after !== undefined)
   })
 
-  const status = Effect.fn("ReviewController.status")(function* (sessionID?: string) {
+  const server = () => deps.server?.()
+
+  const pending = Effect.fn("ReviewController.pending")(function* (now: number) {
+    let count = 0
+    let after: string | undefined
+    do {
+      const page = yield* deps.storage.scan({ prefix: ReviewState.OPEN_PREFIX, after, limit: 100 })
+      for (const entry of page.entries) {
+        if (typeof entry.value !== "string") continue
+        const review = yield* readReview(entry.value)
+        if (review?.status === "open" && review.expiresAt > now) count++
+      }
+      after = page.next
+    } while (after !== undefined)
+    return count
+  })
+
+  /** Everything a client shows about the mode, for one session when given. */
+  const snapshot = Effect.fn("ReviewController.snapshot")(function* (sessionID?: string) {
     const current = yield* settings
-    const lines = [
-      `Remote review: ${current.enabled ? "on" : "off"}, idle ${ReviewDuration.format(current.durationMs)}`,
-    ]
-    if (sessionID) {
-      const now = yield* deps.now
-      const timer = yield* readTimer(sessionID)
-      if (timer) lines.push(`This session: review link in ${ReviewDuration.format(Math.max(0, timer.deadline - now))}`)
-      const review = yield* openReview(sessionID)
-      if (review) lines.push(`This session: review link open until ${new Date(review.expiresAt).toISOString()}`)
+    const now = yield* deps.now
+    const info = server()
+    const addresses = ReviewStatus.addresses(info)
+    const timer = sessionID ? yield* readTimer(sessionID) : undefined
+    const review = sessionID ? yield* openReview(sessionID) : undefined
+    const result: ReviewRpc.Status = {
+      enabled: current.enabled,
+      durationMs: current.durationMs,
+      addressesKnown: addresses.known,
+      lan: addresses.lan ?? null,
+      public: addresses.public ?? null,
+      channels: info?.channels ?? [],
+      pending: yield* pending(now),
+      timerAt: timer?.deadline ?? null,
+      reviewUntil: review && review.expiresAt > now ? review.expiresAt : null,
+      hints: ReviewStatus.hints(info),
     }
-    lines.push(ReviewCommand.USAGE)
-    return lines.join("\n")
+    return result
+  })
+
+  const status = Effect.fn("ReviewController.status")(function* (sessionID?: string) {
+    const current = yield* snapshot(sessionID)
+    const now = yield* deps.now
+    return [...ReviewStatus.lines(current, now), ReviewCommand.USAGE].join("\n")
   })
 
   /** Runs one `/review-remote` invocation. Returns text to show, or fails with a message. */
@@ -234,6 +268,9 @@ export function make(deps: Deps) {
         return "Remote review off"
       }
       case "now": {
+        // A loopback-only link is useless on a phone; say what to set up instead of sending one.
+        if (!ReviewStatus.reachable(ReviewStatus.addresses(server())))
+          return yield* Effect.fail(new Error(ReviewStatus.hints(server())[0]?.message ?? "No reachable address"))
         const session = yield* deps.session(sessionID)
         if (!session) return yield* Effect.fail(new Error("Session not found"))
         yield* clearTimer(sessionID)
@@ -258,8 +295,20 @@ export function make(deps: Deps) {
     } while (after !== undefined)
   })
 
+  /** `command` for RPC clients: user errors become `ok: false` instead of failures, with the fresh status. */
+  const run = Effect.fn("ReviewController.run")(function* (sessionID: string, text: string) {
+    const outcome = yield* command(sessionID, text).pipe(
+      Effect.map((message) => ({ ok: true, message })),
+      Effect.catch((error: Error) => Effect.succeed({ ok: false, message: error.message })),
+    )
+    const result: ReviewRpc.Result = { ...outcome, status: yield* snapshot(sessionID) }
+    return result
+  })
+
   return {
     settings,
+    snapshot,
+    run,
     finished,
     started,
     humanInput,

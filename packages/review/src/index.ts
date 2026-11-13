@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin/effect"
 import { Session } from "@opencode/schema/session"
 import { DateTime, Effect, FiberMap, Stream } from "effect"
+import { ReviewAssets } from "./assets.js"
 import { ReviewBridge } from "./bridge.js"
 import { ReviewCommand } from "./command.js"
 import { ReviewController } from "./controller.js"
@@ -8,7 +9,9 @@ import { ReviewInbox } from "./inbox.js"
 import { ReviewRpc } from "./rpc.js"
 import { ReviewState } from "./state.js"
 import { ReviewSummary } from "./summary.js"
+import { ReviewTool } from "./tool.js"
 
+export { ReviewAssets } from "./assets.js"
 export { ReviewBridge } from "./bridge.js"
 export { ReviewCommand } from "./command.js"
 export { ReviewContext } from "./context.js"
@@ -20,10 +23,14 @@ export { ReviewHandler } from "./handler.js"
 export { ReviewInbox } from "./inbox.js"
 export { ReviewNotify } from "./notify.js"
 export { ReviewPage } from "./page.js"
+export { ReviewRequest } from "./request.js"
+export { ReviewResult } from "./result.js"
 export { ReviewRpc } from "./rpc.js"
 export { ReviewState } from "./state.js"
 export { ReviewStatus } from "./status.js"
 export { ReviewToken } from "./token.js"
+export { ReviewTool } from "./tool.js"
+export { ReviewWaiters } from "./waiters.js"
 
 const millis = (value: DateTime.Utc | undefined) => (value === undefined ? undefined : DateTime.toEpochMillis(value))
 
@@ -73,6 +80,12 @@ export default Plugin.define({
           FiberMap.run(timers, sessionID, Effect.sleep(delayMs).pipe(Effect.andThen(effect))).pipe(Effect.asVoid),
         cancel: (sessionID) => FiberMap.remove(timers, sessionID),
         server: ReviewBridge.server,
+        // The server owns the storage root and serves files from it; without a server nothing could be reviewed.
+        snapshot: (input) => {
+          const root = ReviewBridge.server()?.root
+          if (!root) return Effect.fail(new Error("The review server has no storage for assets; restart opencode."))
+          return ReviewAssets.snapshot({ root, ...input })
+        },
       })
 
       // Clients follow settings through `changed`; every command may have written them.
@@ -132,6 +145,10 @@ export default Plugin.define({
         Effect.catchCause((cause) => Effect.logWarning("review: failed to restore timers", { cause })),
         Effect.forkScoped({ startImmediately: true }),
       )
+
+      yield* ctx.tool.transform((editor) => {
+        editor.add(ReviewTool.make({ request: controller.request, close: controller.close }))
+      })
 
       yield* ctx.command.transform((editor) => {
         editor.add({

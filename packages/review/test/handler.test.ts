@@ -201,7 +201,7 @@ describe("agent reviews", async () => {
     storage.map.set(ReviewState.REVIEW_PREFIX + id, review)
     storage.map.set(ReviewState.OPEN_PREFIX + "s1", [id])
     const unregister = options.wait
-      ? ReviewWaiters.register(id, (delivery) => void deliveries.push(delivery))
+      ? ReviewWaiters.register(id, (delivery) => (deliveries.push(delivery), true))
       : () => {}
     const handler = ReviewHandler.make({
       storage,

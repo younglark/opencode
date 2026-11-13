@@ -15,7 +15,8 @@ export interface Delivery {
   readonly images: ReadonlyArray<{ readonly name: string; readonly path: string; readonly mime: string }>
 }
 
-export type Waiter = (delivery: Delivery) => void
+/** Returns false when the call already stopped waiting (timed out or cancelled), so the feedback goes elsewhere. */
+export type Waiter = (delivery: Delivery) => boolean
 
 const KEY = Symbol.for("opencode.review.waiters")
 const registry = ((globalThis as { [KEY]?: Map<string, Waiter> })[KEY] ??= new Map())
@@ -33,8 +34,7 @@ export function deliver(delivery: Delivery) {
   const waiter = registry.get(delivery.reviewID)
   if (!waiter) return false
   registry.delete(delivery.reviewID)
-  waiter(delivery)
-  return true
+  return waiter(delivery)
 }
 
 export function waiting(reviewID: string) {

@@ -21,6 +21,8 @@ export type Publisher = (review: Ready) => void
 export interface Server {
   readonly urls: ReadonlyArray<string>
   readonly channels: ReadonlyArray<string>
+  /** Where review snapshots and submitted feedback are stored; the server serves them from there. */
+  readonly root?: string
 }
 export type Describe = () => Server
 

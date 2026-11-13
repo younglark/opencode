@@ -1,4 +1,4 @@
-import { expect, setDefaultTimeout } from "bun:test"
+import { expect, setDefaultTimeout, test } from "bun:test"
 import { Bus } from "@opencode/core/bus"
 import { KV } from "@opencode/core/kv"
 import { storage } from "@opencode/core/plugin/host"
@@ -12,8 +12,20 @@ import { Context, DateTime, Effect, Layer } from "effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { serveRoutes } from "./fixture/routes"
+import { isReviewURL } from "../src/review"
 
 setDefaultTimeout(30_000)
+
+test("lets the approval page, submit, annotator and assets skip the server password", () => {
+  const url = (path: string) => new URL("http://opencode.local" + path)
+  expect(isReviewURL(url("/api/review/rev1"))).toBe(true)
+  expect(isReviewURL(url("/api/review/rev1/submit"))).toBe(true)
+  expect(isReviewURL(url("/api/review/rev1/annotator"))).toBe(true)
+  expect(isReviewURL(url("/api/review/rev1/a/tok/shots/far.png"))).toBe(true)
+  expect(isReviewURL(url("/api/review/rev1/annotator/extra"))).toBe(false)
+  expect(isReviewURL(url("/api/session"))).toBe(false)
+})
+
 
 // No model runs: wakes are recorded instead, so a prompt written back by the review route is observable.
 const wakes: string[] = []
@@ -209,6 +221,16 @@ it.live("serves agent review assets by range and takes the structured submit wit
     expect(part.headers.get("content-range")).toBe("bytes 3-5/10")
     expect((yield* get("clip/c.mp4", { range: "bytes=50-60" })).status).toBe(416)
     expect((yield* get("clip/..%2Fshots%2Ffar.png")).status).toBe(404)
+
+    const annotator = yield* Effect.promise(async () => {
+      const response = await server.fetch(`http://opencode.local/api/review/${id}/annotator?t=${token}`)
+      return { status: response.status, type: response.headers.get("content-type"), text: await response.text() }
+    })
+    expect(annotator.status).toBe(200)
+    expect(annotator.type).toContain("text/html")
+    expect(annotator.text).toContain("Required Notice: Copyright 2026 Inginnng")
+    expect(annotator.text).toContain("review-annotator:ready")
+    expect((yield* Effect.promise(async () => (await server.fetch(`http://opencode.local/api/review/${id}/annotator?t=wrong`)).status))).toBe(404)
 
     const submit = (body: unknown) =>
       Effect.promise(async () => {

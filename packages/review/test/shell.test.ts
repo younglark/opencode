@@ -124,6 +124,24 @@ describe("submission", () => {
     })
   })
 
+
+  test("keeps annotation marks and raw overlay data in the submission and treats them as input", () => {
+    const marks = [{ n: 1, shape: "rect" as const, rect: { x1: 10, y1: 20, x2: 80, y2: 90 }, text: "阴影反了" }]
+    const raw = { schemaVersion: "feedback-minimal-4", objects: [] }
+    const draft: ReviewShell.Draft = {
+      v: 1,
+      decision: "changes",
+      items: {
+        shots: { assets: { far: { annotations: marks, raw } } },
+      },
+    }
+    expect(ReviewShell.status(shots, draft)).toBe("open")
+    expect(ReviewShell.toSubmission(items, draft)).toEqual({
+      decision: "changes",
+      items: [{ id: "shots", assets: [{ asset: "far", annotations: marks, raw }] }],
+    })
+  })
+
   test("suggests changes when anything failed, continue when every judged item passed, and keeps stop", () => {
     const draft: ReviewShell.Draft = { v: 1, decision: "continue", items: { shots: { verdict: "fail" } } }
     expect(ReviewShell.suggest(items, draft)).toBe("changes")

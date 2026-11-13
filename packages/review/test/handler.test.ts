@@ -302,3 +302,18 @@ describe("agent reviews", async () => {
     expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual([h.id])
   })
 })
+
+describe("annotator page", () => {
+  test("returns the isolated annotator document for a valid token, and hides it otherwise", async () => {
+    const h = setup()
+    const page = await run(h.handler.annotator("r1", h.token))
+    expect(page.status).toBe(200)
+    expect(page.html).toContain("Required Notice: Copyright 2026 Inginnng")
+    expect(page.html).toContain("review-annotator:ready")
+    expect(page.html).toContain("<title>标注</title>")
+    expect(page.html).not.toContain("EditHere · 改这里")
+    const denied = await run(h.handler.annotator("r1", "wrong"))
+    expect(denied.status).toBe(404)
+    expect(denied.html).not.toContain("Required Notice: Copyright 2026 Inginnng")
+  })
+})

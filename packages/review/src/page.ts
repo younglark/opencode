@@ -2,6 +2,7 @@ export * as ReviewPage from "./page.js"
 
 import type { ReviewContext } from "./context.js"
 import type { ReviewDecide } from "./decide.js"
+import { ReviewAnnotator } from "./annotator.js"
 import { ReviewRequest } from "./request.js"
 import { SCRIPT } from "./shell-client.js"
 import { ReviewShell } from "./shell.js"
@@ -74,7 +75,7 @@ textarea{width:100%;min-height:88px;padding:10px;border-radius:8px;border:1px so
 .switcher{display:flex;gap:6px;overflow:auto;padding:0 0 8px}
 .switcher button{flex:0 0 auto;padding:6px 10px;min-height:36px;border:1px solid var(--line);border-radius:999px;background:var(--bg);font-size:13px}
 .switcher button[aria-current="true"]{border-color:var(--accent);color:var(--accent)}
-figure{margin:0}figure img,figure video{display:block;max-width:100%;height:auto;max-height:min(70dvh,720px);margin:0 auto;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+figure{margin:0}figure img,figure video,.annotator-frame{display:block;max-width:100%;height:auto;max-height:min(70dvh,720px);margin:0 auto;border-radius:6px;border:1px solid var(--line);background:var(--bg)}.annotator-frame{width:100%;height:min(70dvh,720px);max-height:none}
 figcaption{font-size:13px;color:var(--muted);margin-top:4px;word-break:break-all;text-align:center}
 .custom-frame{width:100%;min-height:min(70dvh,640px);border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .step{position:absolute;top:40%;width:44px;height:44px;border:1px solid var(--line);border-radius:22px;background:color-mix(in srgb,var(--bg) 85%,transparent);color:var(--fg);z-index:2;font-size:20px;line-height:1}
@@ -235,6 +236,7 @@ function assetPane(
   token: string,
   item: ReviewRequest.StoredItem,
   asset: ReviewRequest.StoredAsset,
+  annotate = false,
 ) {
   const url = (file: string) => escape(assetURL(review.id, token, item.id, file))
   const caption = `<figcaption>${escape(asset.label ? `${asset.label} · ${asset.id}` : asset.id)}</figcaption>`
@@ -243,7 +245,10 @@ function assetPane(
   const compare = asset.compare
     ? `<details class="more"><summary>对比参考图</summary><img loading="lazy" alt="参考图" src="${url(asset.compare.file)}"></details>`
     : ""
-  return `<div class="asset-pane" data-asset="${escape(asset.id)}"><figure><img loading="lazy" alt="${escape(asset.label ?? asset.id)}" src="${url(asset.stored.file)}">${caption}${compare}</figure></div>`
+  const image = annotate
+    ? ""
+    : `<img loading="lazy" alt="${escape(asset.label ?? asset.id)}" src="${url(asset.stored.file)}">`
+  return `<div class="asset-pane" data-asset="${escape(asset.id)}" data-src="${url(asset.stored.file)}"><figure>${image}${caption}${compare}</figure></div>`
 }
 
 function itemPane(
@@ -272,8 +277,12 @@ function itemPane(
           )
           .join("")}</div>`
       : ""
-  const assets = item.assets.map((asset) => assetPane(review, token, item, asset)).join("")
-  return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}${switcher}<div class="viewer">${assets}</div></section>`
+  const annotate = item.kind === "image" && Boolean(item.feedback?.annotate)
+  const frame = annotate
+    ? `<iframe class="annotator-frame" data-annotator data-item="${escape(item.id)}" title="${escape("标注：" + item.title)}" src="${escape(ReviewAnnotator.route(review.id, token))}"></iframe>`
+    : ""
+  const assets = item.assets.map((asset) => assetPane(review, token, item, asset, annotate)).join("")
+  return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}${switcher}<div class="viewer">${frame}${assets}</div></section>`
 }
 
 function verdictButtons(scope: "item" | "asset", itemID: string, asset?: string) {
@@ -331,7 +340,14 @@ export function approval(input: {
     id: review.id,
     token: input.token,
     submit: `/api/review/${encodeURIComponent(review.id)}/submit`,
-    items: items.map((item) => info(item, input.diffs)),
+    annotator: ReviewAnnotator.route(review.id, input.token),
+    items: items.map((item) => {
+      const base = info(item, input.diffs)
+      if (item.kind !== "image" || !item.feedback?.annotate) return base
+      const sources: Record<string, string> = {}
+      for (const asset of item.assets) sources[asset.id] = assetURL(review.id, input.token, item.id, asset.stored.file)
+      return { ...base, annotate: true, sources }
+    }),
   }
   const wait =
     review.origin === "agent"

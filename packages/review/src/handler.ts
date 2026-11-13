@@ -1,6 +1,7 @@
 export * as ReviewHandler from "./handler.js"
 
 import { Effect, Schema } from "effect"
+import { ReviewAnnotator } from "./annotator.js"
 import { ReviewAssets } from "./assets.js"
 import type { ReviewContext } from "./context.js"
 import type { ReviewController } from "./controller.js"
@@ -302,5 +303,12 @@ export function make(deps: Deps) {
     } satisfies AssetResponse
   })
 
-  return { view, submit, submitJSON, asset }
+  /** Same-origin annotator document, only for an open review with a valid token. */
+  const annotator = Effect.fn("ReviewHandler.annotator")(function* (reviewID: string, token: string | undefined | null) {
+    const { review, outcome } = yield* load(reviewID, token)
+    if (outcome !== "ok" || !review || !token) return ReviewPage.outcome(outcome === "ok" ? "invalid" : outcome)
+    return { status: 200, html: ReviewAnnotator.html() } satisfies Response
+  })
+
+  return { view, submit, submitJSON, asset, annotator }
 }

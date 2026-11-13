@@ -11,6 +11,7 @@ import { ReviewState } from "./state.js"
 import { ReviewSummary } from "./summary.js"
 import { ReviewTool } from "./tool.js"
 
+export { ReviewAnnotator } from "./annotator.js"
 export { ReviewAssets } from "./assets.js"
 export { ReviewBridge } from "./bridge.js"
 export { ReviewCommand } from "./command.js"

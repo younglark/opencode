@@ -18,6 +18,10 @@ export const STATUS_LABEL: Record<Status, string> = {
 export interface AssetDraft {
   verdict?: Verdict
   text?: string
+  /** Structured marks for this asset; restored after a refresh. */
+  annotations?: ReviewResult.Annotation[]
+  /** Annotator-native export without embedded images (feedback-minimal-4). */
+  raw?: unknown
 }
 
 export interface ItemDraft {
@@ -92,7 +96,7 @@ function hasInput(item: ItemInfo, draft: Draft) {
   const saved = itemDraft(draft, item.id)
   if (saved.verdict || saved.text?.trim()) return true
   if (Object.values(saved.checks ?? {}).length > 0) return true
-  return Object.values(saved.assets ?? {}).some((asset) => Boolean(asset.verdict || asset.text?.trim()))
+  return Object.values(saved.assets ?? {}).some((asset) => Boolean(asset.verdict || asset.text?.trim() || asset.annotations?.length || asset.raw))
 }
 
 export function status(item: ItemInfo, draft: Draft): Status {
@@ -121,8 +125,17 @@ export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): Revi
       const asset = saved.assets?.[id]
       if (!asset) return []
       const text = asset.text?.trim()
-      if (!asset.verdict && !text) return []
-      return [{ asset: id, ...(asset.verdict ? { verdict: asset.verdict } : {}), ...(text ? { text } : {}) }]
+      const annotations = asset.annotations?.filter((annotation) => annotation.text?.trim() || annotation.shape !== "global")
+      if (!asset.verdict && !text && !annotations?.length && asset.raw === undefined) return []
+      return [
+        {
+          asset: id,
+          ...(asset.verdict ? { verdict: asset.verdict } : {}),
+          ...(text ? { text } : {}),
+          ...(annotations?.length ? { annotations } : {}),
+          ...(asset.raw !== undefined ? { raw: asset.raw } : {}),
+        },
+      ]
     })
     const checks = (item.feedback?.checks ?? []).flatMap((check) => {
       const verdict = saved.checks?.[check.id]

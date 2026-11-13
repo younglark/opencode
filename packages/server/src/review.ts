@@ -29,8 +29,10 @@ export const PATH = "/api/review/:id"
 export const SUBMIT_PATH = "/api/review/:id/submit"
 /** Snapshotted assets. The token sits in the path so a custom page's relative links keep working. */
 export const ASSET_PATH = "/api/review/:id/a/:t/:item/*"
-// Only the page, its submit and its assets skip the server password; anything else under the prefix still needs it.
-const PATTERN = /^\/api\/review\/[A-Za-z0-9_-]+(\/submit|\/a\/[^/]+\/[A-Za-z0-9_-]+\/.+)?$/
+/** Image annotator, same token in ?t= as the approval page. */
+export const ANNOTATOR_PATH = "/api/review/:id/annotator"
+// Only the page, its submit, its annotator and its assets skip the server password; anything else still needs it.
+const PATTERN = /^\/api\/review\/[A-Za-z0-9_-]+(\/submit|\/annotator|\/a\/[^/]+\/[A-Za-z0-9_-]+\/.+)?$/
 
 export function isReviewURL(url: URL) {
   return PATTERN.test(url.pathname)
@@ -184,6 +186,15 @@ export const layer = (urls: () => ReadonlyArray<string>, dataRoot: string = root
           const body = yield* request.json.pipe(Effect.orElseSucceed(() => ({})))
           const result = yield* handler.submitJSON(id, body)
           return HttpServerResponse.jsonUnsafe(result.body, { status: result.status, headers: HEADERS })
+        }),
+      )
+      yield* router.add(
+        "GET",
+        ANNOTATOR_PATH,
+        Effect.gen(function* () {
+          const { request, id } = yield* params
+          const token = new URL(request.url, "http://localhost").searchParams.get("t")
+          return respond(yield* handler.annotator(id, token))
         }),
       )
       yield* router.add(

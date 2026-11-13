@@ -143,7 +143,7 @@ describe("approval shell", () => {
         title: "Renders",
         note: "看灯光",
         bundle: "r1",
-        feedback: { verdict: true, required: true, checks: [{ id: "shadow", label: "阴影正确" }] },
+        feedback: { annotate: true, verdict: true, required: true, checks: [{ id: "shadow", label: "阴影正确" }] },
         assets: [
           {
             id: "far",
@@ -189,7 +189,7 @@ describe("approval shell", () => {
     diffs,
   })
 
-  test("lists every item, switches image assets, and keeps image and video view-only", () => {
+  test("lists every item, annotates images, and keeps video view-only", () => {
     expect(page).toContain('data-go="shots"')
     expect(page).toContain('data-go="clip"')
     expect(page).toContain('data-go="diff"')
@@ -198,9 +198,17 @@ describe("approval shell", () => {
     expect(page).toContain('data-asset-go="far"')
     expect(page).toContain('data-asset-go="near"')
     expect(page).toContain("/api/review/r1/a/tok%26en/shots/far.png")
+    expect(page).toContain("/api/review/r1/annotator?t=tok%26en")
+    expect(page).toContain('data-annotator')
     expect(page).toContain("对比参考图")
     expect(page).toContain("<video")
     expect(page).not.toContain("requestVideoFrameCallback")
+    expect(page).toContain("review-annotator:load")
+    const payload = page.split('id="review-data">')[1].split("</script>")[0]
+    const data = JSON.parse(payload)
+    expect(data.items[0].annotate).toBe(true)
+    expect(data.items[0].sources.far).toContain("/api/review/r1/a/tok%26en/shots/far.png")
+    expect(data.items[1].annotate).toBeUndefined()
   })
 
   test("migrates the diff with per-file verdicts and honors a file filter", () => {

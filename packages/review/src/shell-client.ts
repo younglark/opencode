@@ -57,7 +57,10 @@ export const SCRIPT = String.raw`
       (saved.text && saved.text.trim()) ||
       (saved.checks && Object.keys(saved.checks).length) ||
       (saved.assets &&
-        Object.keys(saved.assets).some((id) => saved.assets[id].verdict || (saved.assets[id].text && saved.assets[id].text.trim())))
+        Object.keys(saved.assets).some((id) => {
+          const asset = saved.assets[id]
+          return asset.verdict || (asset.text && asset.text.trim()) || (asset.annotations && asset.annotations.length) || asset.raw
+        }))
     if ((draft.seen && draft.seen[item.id]) || input) return "open"
     return "unread"
   }
@@ -73,10 +76,14 @@ export const SCRIPT = String.raw`
       for (const id of item.assetIDs) {
         const asset = saved.assets && saved.assets[id]
         const text = asset && asset.text && asset.text.trim()
-        if (!asset || (!asset.verdict && !text)) continue
+        const annotations = asset && asset.annotations
+        if (!asset || (!asset.verdict && !text && !(annotations && annotations.length) && asset.raw === undefined)) continue
         const entry = { asset: id }
         if (asset.verdict) entry.verdict = asset.verdict
         if (text) entry.text = text
+        if (annotations && annotations.length) entry.annotations = annotations
+        if (asset.raw !== undefined) entry.raw = asset.raw
+        if (asset.files && asset.files.length) entry.files = asset.files
         assets.push(entry)
       }
       const checks = []
@@ -105,6 +112,68 @@ export const SCRIPT = String.raw`
     const judged = items.filter(asksVerdict)
     if (judged.length && judged.every((item) => itemVerdict(item) === "pass")) return "continue"
     return draft.decision
+  }
+
+  const origin = location.origin
+  const waiting = {}
+  const loadWaiting = {}
+  const frameOf = (item) => qs('iframe[data-annotator][data-item="' + CSS.escape(item.id) + '"]')
+  const fileName = (item, asset) => {
+    const part = (value) => String(value || "asset").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/_+/g, "_").slice(0, 40) || "asset"
+    return part(item) + "-" + part(asset) + ".annotated.png"
+  }
+  const postFrame = (iframe, message) => {
+    if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage(message, origin)
+  }
+  const loadAnnotator = (item, assetID) => {
+    if (!item || !item.annotate) return Promise.resolve()
+    const iframe = frameOf(item)
+    if (!iframe) return Promise.resolve()
+    const asset = assetID || currentAsset(item)
+    const src = item.sources && item.sources[asset]
+    if (!src) return Promise.resolve()
+    const saved = ((draft.items && draft.items[item.id] && draft.items[item.id].assets) || {})[asset]
+    const message = {
+      type: "review-annotator:load",
+      item: item.id,
+      asset,
+      src,
+      name: asset,
+      draft: saved && saved.raw ? { raw: saved.raw } : undefined,
+    }
+    return new Promise((resolve, reject) => {
+      const key = item.id
+      if (loadWaiting[key]) {
+        clearTimeout(loadWaiting[key].timer)
+        loadWaiting[key].resolve()
+      }
+      const timer = setTimeout(() => {
+        delete loadWaiting[key]
+        reject(new Error("annotator load timeout"))
+      }, 20000)
+      const send = () => postFrame(iframe, message)
+      loadWaiting[key] = { resolve, reject, timer, asset, send }
+      if (iframe.dataset.ready === "1") send()
+    })
+  }
+  const requestExport = (iframe) =>
+    new Promise((resolve, reject) => {
+      const id = Math.random().toString(36).slice(2)
+      const timer = setTimeout(() => {
+        delete waiting[id]
+        reject(new Error("annotator export timeout"))
+      }, 15000)
+      waiting[id] = { resolve, reject, timer }
+      postFrame(iframe, { type: "review-annotator:export", request: id })
+    })
+  const storeMarks = (itemID, asset, annotations, raw, files) => {
+    if (!itemID || !asset) return
+    const saved = assetOf(itemID, asset)
+    if (annotations) saved.annotations = annotations
+    if (raw !== undefined) saved.raw = raw
+    if (files) saved.files = files
+    else if (saved.annotations && saved.annotations.length) saved.files = [fileName(itemID, asset)]
+    save()
   }
 
   const qs = (sel, el) => (el || root).querySelector(sel)
@@ -207,6 +276,7 @@ export const SCRIPT = String.raw`
     syncVerdicts(item)
     syncNav()
     save()
+    if (item.annotate) void loadAnnotator(item, asset)
   }
 
   const setDecision = (decision) => {
@@ -252,10 +322,28 @@ export const SCRIPT = String.raw`
     if (button) button.disabled = true
     showError("")
     try {
+      const files = {}
+      for (const item of items) {
+        if (!item.annotate) continue
+        const iframe = frameOf(item)
+        if (!iframe) continue
+        const saved = (draft.items && draft.items[item.id] && draft.items[item.id].assets) || {}
+        for (const id of item.assetIDs) {
+          const asset = saved[id]
+          if (!asset || (!(asset.annotations && asset.annotations.length) && asset.raw === undefined)) continue
+          try {
+            await loadAnnotator(item, id)
+            const exported = await requestExport(iframe)
+            const name = (exported.file && exported.file.name) || fileName(item.id, id)
+            storeMarks(item.id, id, exported.annotations, exported.raw, exported.file && exported.file.dataUrl ? [name] : [])
+            if (exported.file && exported.file.dataUrl) files[name] = exported.file.dataUrl
+          } catch (error) {}
+        }
+      }
       const response = await fetch(data.submit, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ t: data.token, result: toSubmission(), files: {} }),
+        body: JSON.stringify({ t: data.token, result: toSubmission(), files }),
       })
       const body = await response.json().catch(() => ({}))
       if (response.ok && body.ok) {
@@ -364,6 +452,69 @@ export const SCRIPT = String.raw`
       syncNav()
       save()
     }
+  })
+
+  window.addEventListener("message", (event) => {
+    if (event.origin !== origin) return
+    const message = event.data
+    if (!message || typeof message !== "object" || typeof message.type !== "string") return
+    if (!message.type.startsWith("review-annotator:")) return
+    if (message.type === "review-annotator:ready") {
+      const iframe = qsa("iframe[data-annotator]").find((frame) => frame.contentWindow === event.source)
+      if (!iframe) return
+      iframe.dataset.ready = "1"
+      const item = byId[iframe.getAttribute("data-item")]
+      const waiter = item && loadWaiting[item.id]
+      if (waiter && waiter.send) waiter.send()
+      else if (item && item.annotate && currentItem() && currentItem().id === item.id) void loadAnnotator(item, currentAsset(item))
+      return
+    }
+    if (message.type === "review-annotator:change") {
+      storeMarks(message.item, message.asset, message.annotations, message.raw)
+      const waiter = loadWaiting[message.item]
+      if (waiter && waiter.asset === message.asset) {
+        clearTimeout(waiter.timer)
+        delete loadWaiting[message.item]
+        waiter.resolve()
+      }
+      const item = byId[message.item]
+      if (item) {
+        syncNav()
+      }
+      return
+    }
+    if (message.type === "review-annotator:exported") {
+      const waiter = waiting[message.request]
+      if (!waiter) return
+      clearTimeout(waiter.timer)
+      delete waiting[message.request]
+      waiter.resolve(message)
+      return
+    }
+    if (message.type === "review-annotator:shortcut") {
+      const key = message.key
+      if (message.ctrl && key === "Enter") return void submit()
+      const item = currentItem()
+      if (!item) return
+      if (key === "j" || key === "J" || key === "ArrowDown") {
+        const index = items.findIndex((entry) => entry.id === item.id) + 1
+        if (items[index]) show(items[index].id)
+      } else if (key === "k" || key === "K" || key === "ArrowUp") {
+        const index = items.findIndex((entry) => entry.id === item.id) - 1
+        if (items[index]) show(items[index].id)
+      } else if (key === "p" || key === "P" || key === "f" || key === "F") {
+        const value = key === "p" || key === "P" ? "pass" : "fail"
+        if (item.feedback && item.feedback.verdict && item.assetIDs.length) assetOf(item.id, currentAsset(item)).verdict = value
+        else ensureItem(item.id).verdict = value
+        applySuggest()
+        syncVerdicts(item)
+        syncNav()
+        save()
+      }
+    }
+  })
+  qsa("iframe[data-annotator]").forEach((iframe) => {
+    iframe.addEventListener("load", () => postFrame(iframe, { type: "review-annotator:hello" }))
   })
 
   const viewport = window.visualViewport

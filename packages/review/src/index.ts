@@ -11,6 +11,7 @@ import { ReviewSummary } from "./summary.js"
 
 export { ReviewBridge } from "./bridge.js"
 export { ReviewCommand } from "./command.js"
+export { ReviewContext } from "./context.js"
 export { ReviewController } from "./controller.js"
 export { ReviewDecide } from "./decide.js"
 export { ReviewDuration } from "./duration.js"

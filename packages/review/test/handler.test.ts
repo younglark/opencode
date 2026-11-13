@@ -6,7 +6,7 @@ import { ReviewState } from "../src/state.js"
 import { ReviewToken } from "../src/token.js"
 import { memoryStorage, run } from "./fixture.js"
 
-function setup(options: { promptFails?: boolean } = {}) {
+function setup(options: { promptFails?: boolean; context?: boolean } = {}) {
   const storage = memoryStorage()
   const clock = { now: 5_000 }
   const sessions = new Map<string, ReviewDecide.SessionView>([["s1", { busy: 100, idle: 200 }]])
@@ -35,6 +35,14 @@ function setup(options: { promptFails?: boolean } = {}) {
         { file: "a.ts", patch: "@@ -1 +1 @@\n-old\n+<new>", additions: 1, deletions: 1, status: "modified" },
       ]),
     prompt: (input) => (options.promptFails ? Effect.fail("busy") : Effect.sync(() => void prompts.push(input))),
+    context: options.context
+      ? () =>
+          Effect.succeed({
+            title: "Fix <bug>",
+            request: "请修复登录",
+            recent: [{ role: "user" as const, text: "请修复登录" }],
+          })
+      : undefined,
   })
   const stored = () => ReviewState.review(storage.map.get(ReviewState.REVIEW_PREFIX + "r1"))!
   return { handler, token, clock, sessions, prompts, stored, storage }
@@ -51,6 +59,14 @@ describe("approval page", () => {
     expect(page.html).not.toContain("<new>")
     expect(page.html).toContain('name="decision" value="changes"')
     expect(page.html).toContain(`value="${h.token}"`)
+  })
+
+  test("renders task context when the session can supply it", async () => {
+    const h = setup({ context: true })
+    const page = await run(h.handler.view("r1", h.token))
+    expect(page.status).toBe(200)
+    expect(page.html).toContain("请修复登录")
+    expect(page.html).toContain("任务背景")
   })
 
   test("refuses a wrong token without revealing the review", async () => {
@@ -76,6 +92,28 @@ describe("submit", () => {
     expect(again.status).toBe(409)
     expect(h.prompts).toHaveLength(1)
     expect((await run(h.handler.view("r1", h.token))).html).toContain("已经提交过")
+  })
+
+  test("writes overall text and per-file comments back together", async () => {
+    const h = setup()
+    const page = await run(
+      h.handler.submit("r1", {
+        t: h.token,
+        decision: "changes",
+        text: "rename foo",
+        comments: [
+          { file: "a.ts", text: "unused" },
+          { file: "b.ts", text: "" },
+        ],
+      }),
+    )
+    expect(page.status).toBe(200)
+    expect(page.html).toContain("已把修改意见发给 agent")
+    expect(h.prompts).toHaveLength(1)
+    expect(h.prompts[0].text).toContain("rename foo")
+    expect(h.prompts[0].text).toContain("- a.ts:")
+    expect(h.prompts[0].text).toContain("  unused")
+    expect(h.prompts[0].text).not.toContain("b.ts")
   })
 
   test("rejects when the session progressed on the desktop since the review started", async () => {

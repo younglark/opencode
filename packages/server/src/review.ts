@@ -4,7 +4,15 @@ import { Instance } from "@opencode/core/instance/service"
 import { KV } from "@opencode/core/kv"
 import { storage } from "@opencode/core/plugin/host"
 import { Session } from "@opencode/core/session"
-import { ReviewBridge, ReviewHandler, ReviewNotify, ReviewState, ReviewStatus } from "@opencode/review"
+import {
+  ReviewBridge,
+  ReviewContext,
+  ReviewFeedback,
+  ReviewHandler,
+  ReviewNotify,
+  ReviewState,
+  ReviewStatus,
+} from "@opencode/review"
 import { Clock, DateTime, Effect, Option } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 
@@ -67,6 +75,16 @@ export const layer = (urls: () => ReadonlyArray<string>) =>
             ),
             Effect.asVoid,
           ),
+        context: (sessionID) =>
+          find(sessionID).pipe(
+            Effect.flatMap((info) => {
+              if (!info) return Effect.succeed(undefined)
+              return sessions.messages({ sessionID: info.id, order: "asc" }).pipe(
+                instances.provide(info),
+                Effect.map((messages) => ReviewContext.from(info.title ?? info.id, messages)),
+              )
+            }),
+          ),
       })
 
       const notifier = ReviewNotify.make({
@@ -103,7 +121,12 @@ export const layer = (urls: () => ReadonlyArray<string>) =>
           const { request, id } = yield* params
           const body = new URLSearchParams(yield* request.text.pipe(Effect.orElseSucceed(() => "")))
           return respond(
-            yield* handler.submit(id, { t: body.get("t"), decision: body.get("decision"), text: body.get("text") }),
+            yield* handler.submit(id, {
+              t: body.get("t"),
+              decision: body.get("decision"),
+              text: body.get("text"),
+              comments: ReviewFeedback.fromForm(body),
+            }),
           )
         }),
       )

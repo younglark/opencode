@@ -228,6 +228,7 @@
         "@opencode/plugin": "workspace:*",
         "@opencode/plugin-browser": "workspace:*",
         "@opencode/pty": "0.5.2",
+        "@opencode/review": "workspace:*",
         "@opencode/schema": "workspace:*",
         "@opencode/util": "workspace:*",
         "@parcel/watcher": "2.5.1",

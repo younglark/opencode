@@ -23,3 +23,6 @@ for a while, and writes the reviewer's decision back into the session.
   refuses to send a link no phone could open; without a webhook it suggests
   `opencode service set env OPENCODE_REVIEW_FEISHU_WEBHOOK <webhook-url>`. Each of these restarts the service.
 - `includePairLink` is reserved and stays off; nothing reads it yet.
+
+Build, versioning, sync-from-upstream, and why this fork must not be auto-upgraded to the official
+release are documented in [`FORK.md`](../../FORK.md) at the repository root.

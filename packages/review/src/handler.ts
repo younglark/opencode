@@ -1,0 +1,94 @@
+export * as ReviewHandler from "./handler.js"
+
+import { Effect, Schema } from "effect"
+import type { ReviewController } from "./controller.js"
+import { ReviewDecide } from "./decide.js"
+import { ReviewFeedback } from "./feedback.js"
+import { ReviewPage } from "./page.js"
+import { ReviewState } from "./state.js"
+
+/** What the server route supplies: plugin storage, the session and its diff, and a way to prompt it. */
+export interface Deps {
+  readonly storage: ReviewController.Storage
+  readonly now: Effect.Effect<number>
+  readonly session: (sessionID: string) => Effect.Effect<ReviewDecide.SessionView | undefined>
+  readonly diff: (sessionID: string) => Effect.Effect<ReadonlyArray<ReviewPage.FileDiff>, unknown>
+  readonly prompt: (input: {
+    readonly sessionID: string
+    readonly text: string
+    readonly metadata: Record<string, unknown>
+  }) => Effect.Effect<void, unknown>
+}
+
+export interface Response {
+  readonly status: number
+  readonly html: string
+}
+
+const decodeDecision = Schema.decodeUnknownOption(ReviewState.Decision)
+const json = (value: unknown) => value as Schema.Json
+
+export function make(deps: Deps) {
+  const load = Effect.fn("ReviewHandler.load")(function* (reviewID: string, token: string | undefined | null) {
+    const review = ReviewState.review(yield* deps.storage.get(ReviewState.REVIEW_PREFIX + reviewID))
+    const session = review ? yield* deps.session(review.sessionID) : undefined
+    const outcome = ReviewDecide.check({ review, token, now: yield* deps.now, session })
+    return { review, outcome }
+  })
+
+  const view = Effect.fn("ReviewHandler.view")(function* (reviewID: string, token: string | undefined | null) {
+    const { review, outcome } = yield* load(reviewID, token)
+    if (outcome !== "ok" || !review || !token) return ReviewPage.outcome(outcome === "ok" ? "invalid" : outcome)
+    const diff = yield* deps.diff(review.sessionID).pipe(
+      Effect.map((diffs) => ({ diffs, error: undefined })),
+      Effect.catchCause(() => Effect.succeed({ diffs: [], error: "改动暂时无法读取。" })),
+    )
+    return {
+      status: 200,
+      html: ReviewPage.approval({ review, token, diffs: diff.diffs, diffError: diff.error }),
+    } satisfies Response
+  })
+
+  const submit = Effect.fn("ReviewHandler.submit")(function* (
+    reviewID: string,
+    form: { readonly t?: string | null; readonly decision?: string | null; readonly text?: string | null },
+  ) {
+    const { review, outcome } = yield* load(reviewID, form.t)
+    if (outcome !== "ok" || !review) return ReviewPage.outcome(outcome === "ok" ? "invalid" : outcome)
+    const decision = decodeDecision(form.decision)
+    if (decision._tag === "None") return { status: 400, html: ReviewPage.outcome("invalid").html }
+    const now = yield* deps.now
+    // One-time: the token is spent before anything is written back, so a double tap cannot prompt twice.
+    const closed: ReviewState.Review = {
+      ...review,
+      status: "submitted",
+      decision: decision.value,
+      closedAt: now,
+      ...(form.text ? { feedback: form.text.slice(0, ReviewFeedback.MAX_TEXT) } : {}),
+    }
+    yield* deps.storage.set(ReviewState.REVIEW_PREFIX + review.id, json(closed))
+    const open = yield* deps.storage.get(ReviewState.OPEN_PREFIX + review.sessionID)
+    if (open === review.id) yield* deps.storage.remove(ReviewState.OPEN_PREFIX + review.sessionID)
+    const text = ReviewFeedback.prompt(decision.value, form.text ?? undefined)
+    if (text === undefined) return { status: 200, html: ReviewPage.submitted(decision.value) } satisfies Response
+    const sent = yield* deps
+      .prompt({ sessionID: review.sessionID, text, metadata: ReviewFeedback.metadata(review.id, decision.value) })
+      .pipe(
+        Effect.as(true),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("review feedback could not be written back", { reviewID: review.id, cause }).pipe(
+            Effect.as(false),
+          ),
+        ),
+      )
+    if (!sent) {
+      // Give the link back so the phone can retry.
+      yield* deps.storage.set(ReviewState.REVIEW_PREFIX + review.id, json(review))
+      yield* deps.storage.set(ReviewState.OPEN_PREFIX + review.sessionID, review.id)
+      return ReviewPage.failed()
+    }
+    return { status: 200, html: ReviewPage.submitted(decision.value) } satisfies Response
+  })
+
+  return { view, submit }
+}

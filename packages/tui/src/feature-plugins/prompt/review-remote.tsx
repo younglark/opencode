@@ -9,7 +9,7 @@ import { useTheme } from "../../context/theme"
 /**
  * `/review-remote <duration>|on|off|now` and `<leader>v` for `now`. The server plugin owns the mode; this calls its
  * RPC so results show as toasts and status as a dialog instead of a failed command, and shows the mode beside the
- * prompt. Missing LAN/public addresses and webhooks come back as hints with the commands to run: service config is
+ * prompt. Missing LAN/public addresses and notification channels come back as hints with the commands to run: service config is
  * never changed from here.
  */
 export const COMMAND = "review.remote"

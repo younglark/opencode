@@ -28,12 +28,23 @@ describe("hints", () => {
     expect(hints[0].message).toContain(ReviewStatus.LAN_COMMAND)
     expect(hints[0].message).toContain(ReviewStatus.REMOTE_COMMAND)
     expect(hints[1].message).toContain("opencode service set env OPENCODE_REVIEW_FEISHU_WEBHOOK <webhook-url>")
+    expect(hints[1].message).toContain("opencode service set env OPENCODE_REVIEW_PUSHPLUS_TOKEN <pushplus-token>")
+    expect(hints[1].message).toContain("opencode service set env OPENCODE_REVIEW_SERVERCHAN_KEY <sendkey>")
   })
 
   test("channels only counts non-empty webhook variables", () => {
     expect(
       ReviewStatus.channels({ OPENCODE_REVIEW_FEISHU_WEBHOOK: "https://hook", OPENCODE_REVIEW_WECOM_WEBHOOK: " " }),
     ).toEqual(["OPENCODE_REVIEW_FEISHU_WEBHOOK"])
+    expect(
+      ReviewStatus.channels({ OPENCODE_REVIEW_PUSHPLUS_TOKEN: "tok", OPENCODE_REVIEW_SERVERCHAN_KEY: "SCTkey" }),
+    ).toEqual(["OPENCODE_REVIEW_PUSHPLUS_TOKEN", "OPENCODE_REVIEW_SERVERCHAN_KEY"])
+  })
+
+  test("a WeChat channel alone satisfies the notification hint", () => {
+    expect(ReviewStatus.hints({ urls: ["https://x.example"], channels: ["OPENCODE_REVIEW_PUSHPLUS_TOKEN"] })).toEqual(
+      [],
+    )
   })
 })
 

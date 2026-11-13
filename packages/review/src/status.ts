@@ -8,6 +8,15 @@ import type { ReviewRpc } from "./rpc.js"
 export const LAN_COMMAND = "opencode service set hostname 0.0.0.0"
 export const REMOTE_COMMAND = "opencode service set remote true"
 export const webhookCommand = (name: string) => `opencode service set env ${name} <webhook-url>`
+export const tokenCommand = (name: string, value: string) => `opencode service set env ${name} <${value}>`
+
+/** Every notification env var, in the order hints list them. */
+export const CHANNELS = [
+  ReviewNotify.FEISHU_ENV,
+  ReviewNotify.WECOM_ENV,
+  ReviewNotify.PUSHPLUS_ENV,
+  ReviewNotify.SERVERCHAN_ENV,
+] as const
 
 /** What the server layer reports about itself; undefined when no server layer runs (a test host). */
 export interface Server {
@@ -45,7 +54,7 @@ export interface Hint {
 
 /** Channels the notifier can send to, from the server process environment. */
 export function channels(env: { readonly [key: string]: string | undefined }) {
-  return [ReviewNotify.FEISHU_ENV, ReviewNotify.WECOM_ENV].filter((name) => (env[name] ?? "").trim() !== "")
+  return CHANNELS.filter((name) => (env[name] ?? "").trim() !== "")
 }
 
 /** What the user has to set up before a phone can open a review link. Never acted on automatically. */
@@ -72,9 +81,11 @@ export function hints(server: Server | undefined): Hint[] {
     result.push({
       level: "warning",
       message: [
-        "No notification webhook is set, so nobody receives the link.",
+        "No notification channel is set, so nobody receives the link. Set one or more:",
         webhookCommand(ReviewNotify.FEISHU_ENV),
         webhookCommand(ReviewNotify.WECOM_ENV),
+        `${tokenCommand(ReviewNotify.PUSHPLUS_ENV, "pushplus-token")}   # personal WeChat via PushPlus`,
+        `${tokenCommand(ReviewNotify.SERVERCHAN_ENV, "sendkey")}   # personal WeChat via Server酱`,
       ].join("\n"),
     })
   return result

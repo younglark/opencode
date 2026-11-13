@@ -121,5 +121,7 @@ it.live("registers the notifier for the server's lifetime", () =>
     expect(
       ReviewBridge.publish({ reviewID: "r", token: "t", sessionID: "s", title: "x", summary: "y", directory: "/d" }),
     ).toBe(true)
+    // Status reads the server's URLs and webhooks through the bridge.
+    expect(ReviewBridge.server()?.urls).toEqual([])
   }),
 )

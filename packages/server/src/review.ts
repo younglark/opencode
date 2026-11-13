@@ -4,7 +4,7 @@ import { Instance } from "@opencode/core/instance/service"
 import { KV } from "@opencode/core/kv"
 import { storage } from "@opencode/core/plugin/host"
 import { Session } from "@opencode/core/session"
-import { ReviewBridge, ReviewHandler, ReviewNotify, ReviewState } from "@opencode/review"
+import { ReviewBridge, ReviewHandler, ReviewNotify, ReviewState, ReviewStatus } from "@opencode/review"
 import { Clock, DateTime, Effect, Option } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 
@@ -77,6 +77,9 @@ export const layer = (urls: () => ReadonlyArray<string>) =>
       })
       const unregister = ReviewBridge.register(notifier.push)
       yield* Effect.addFinalizer(() => Effect.sync(unregister))
+      // Lets `/review-remote` status tell the user what to set up; read live, as the tunnel can come and go.
+      const undescribe = ReviewBridge.describe(() => ({ urls: urls(), channels: ReviewStatus.channels(process.env) }))
+      yield* Effect.addFinalizer(() => Effect.sync(undescribe))
 
       const params = Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest

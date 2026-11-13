@@ -48,10 +48,12 @@ OPENCODE_VERSION=2.2.7-review.1 OPENCODE_CHANNEL=review \
 
 ## Required environment and service setup
 
-Webhooks are read only from the environment, never from config, and are never logged:
+Notification channels are read only from the environment, never from config, and are never logged. Set one or more:
 
-- `OPENCODE_REVIEW_FEISHU_WEBHOOK`
-- `OPENCODE_REVIEW_WECOM_WEBHOOK`
+- `OPENCODE_REVIEW_FEISHU_WEBHOOK` (Feishu group bot URL)
+- `OPENCODE_REVIEW_WECOM_WEBHOOK` (WeCom group bot URL)
+- `OPENCODE_REVIEW_PUSHPLUS_TOKEN` (PushPlus token, personal WeChat, https://www.pushplus.plus/)
+- `OPENCODE_REVIEW_SERVERCHAN_KEY` (Server酱 SendKey, `SCT…` for WeChat or `sctp…` for the Server酱³ app, https://sct.ftqq.com/)
 
 The plugin will not change service settings by itself. Status / `now` may hint at these commands, each of which restarts the service:
 
@@ -61,6 +63,8 @@ opencode service set remote true                # OpenTunnel public URL
 opencode service set env OPENCODE_REVIEW_FEISHU_WEBHOOK <webhook-url>
 # and/or
 opencode service set env OPENCODE_REVIEW_WECOM_WEBHOOK <webhook-url>
+opencode service set env OPENCODE_REVIEW_PUSHPLUS_TOKEN <pushplus-token>
+opencode service set env OPENCODE_REVIEW_SERVERCHAN_KEY <sendkey>
 ```
 
 Then in a session: `/review-remote 10m` (or `on` / `off` / `now`). `<leader>v` (ctrl+x v) runs `now`. `now` refuses to send a link if only loopback addresses are available.

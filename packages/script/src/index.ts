@@ -23,6 +23,7 @@ const env = {
 }
 const CHANNEL = await (async () => {
   if (env.OPENCODE_CHANNEL) return env.OPENCODE_CHANNEL
+  if (env.OPENCODE_VERSION && /-review\.\d+/.test(env.OPENCODE_VERSION)) return "review"
   if (env.OPENCODE_VERSION && !env.OPENCODE_VERSION.startsWith("0.0.0-")) return "latest"
   const branch = await $`git branch --show-current`.text().then((x) => x.trim())
   if (!branch) return "detached"

@@ -4,6 +4,7 @@ import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Updater } from "../../services/updater"
 import { handlePromptErrors } from "../../ui/prompt"
+import { isReviewFork } from "../../services/updater-action"
 import { OPENCODE_VERSION } from "../../version"
 import { stripVTControlCharacters } from "node:util"
 
@@ -12,6 +13,13 @@ export default Runtime.handler(
   Effect.fn("cli.upgrade")(
     function* (input) {
       intro("Upgrade")
+      if (isReviewFork(OPENCODE_VERSION)) {
+        log.warn(
+          `This fork build (${OPENCODE_VERSION}) does not upgrade to the official OpenCode release. Rebuild from the review branch instead.`,
+        )
+        outro("Done")
+        return
+      }
       const updater = yield* Updater.Service
       const method = Option.getOrUndefined(input.method) ?? (yield* updater.method())
       if (!method)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { action } from "./updater-action"
+import { action, isReviewFork } from "./updater-action"
 import { decodePolicy } from "./updater"
 
 describe("updater", () => {
@@ -83,5 +83,22 @@ describe("updater", () => {
   test("rejects versions longer than semver's limit before trimming", () => {
     expect(action("1.2.3", `${" ".repeat(251)}1.2.3`, "notify")).toBe("none")
     expect(action("1.2.3", `1.2.4+${"a".repeat(250)}`, "notify")).toBe("notify")
+  })
+})
+
+describe("review fork builds", () => {
+  test("recognizes x.y.z-review.N versions", () => {
+    expect(isReviewFork("2.2.7-review.1")).toBe(true)
+    expect(isReviewFork("2.2.7-review.12")).toBe(true)
+    expect(isReviewFork("2.2.7")).toBe(false)
+    expect(isReviewFork("2.2.7-beta.1")).toBe(false)
+    expect(isReviewFork("0.0.0-dev-17403")).toBe(false)
+  })
+
+  test("never auto-upgrades or notifies a fork build onto the official channel", () => {
+    expect(action("2.2.7-review.1", "2.2.7", "auto")).toBe("none")
+    expect(action("2.2.7-review.1", "2.3.0", "notify")).toBe("none")
+    expect(action("2.2.7-review.1", "2.2.8", "auto")).toBe("none")
+    expect(action("2.2.7", "2.2.8", "auto")).toBe("auto")
   })
 })

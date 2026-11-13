@@ -1,12 +1,18 @@
 export type Policy = "disable" | "notify" | "auto"
 export type Action = "none" | "notify" | "auto"
 
+/** Fork builds are versioned `x.y.z-review.N` and must not be replaced by the official channel. */
+export function isReviewFork(version: string) {
+  return /-review\.\d+/.test(version)
+}
+
 const maximumComponent = "9007199254740991"
 const versionPattern =
   /^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 
 export function action(current: string, latest: string, policy: Policy): Action {
   if (policy === "disable") return "none"
+  if (isReviewFork(current)) return "none"
   const currentVersion = parseReleaseVersion(current)
   const latestVersion = parseReleaseVersion(latest)
   if (!currentVersion || !latestVersion || sameRelease(currentVersion, latestVersion)) return "none"

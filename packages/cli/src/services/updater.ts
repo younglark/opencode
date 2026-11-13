@@ -8,7 +8,7 @@ import { parse, type ParseError } from "jsonc-parser"
 import path from "node:path"
 import { stripVTControlCharacters } from "node:util"
 import { RetainedImage } from "./retained-image"
-import { action, parseReleaseVersion, type Policy } from "./updater-action"
+import { action, isReviewFork, parseReleaseVersion, type Policy } from "./updater-action"
 import { errorMessage } from "../util/error"
 
 export const methods = ["curl", "npm", "pnpm", "bun", "yarn", "vp", "brew", "winget"] as const
@@ -257,7 +257,10 @@ const make = Effect.gen(function* () {
     if (installedWinget) return "winget"
     if (!installedPackage || installedOwner) return
 
-    const parts = executable.toLowerCase().split(path.sep).map((part) => part.replace(/^\./, ""))
+    const parts = executable
+      .toLowerCase()
+      .split(path.sep)
+      .map((part) => part.replace(/^\./, ""))
     const checks: Array<{ method: Method; command: string[] }> = [
       { method: "npm", command: [npm, "list", "-g", "--depth=0", ...npmPrefixArgs, installedPackage] },
       { method: "pnpm", command: ["pnpm", "list", "-g", "--depth=0", installedPackage] },
@@ -605,9 +608,13 @@ const make = Effect.gen(function* () {
   })
 
   const inspect = Effect.fnUntraced(function* () {
-    if (OPENCODE_LOCAL || ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "")) {
+    if (
+      OPENCODE_LOCAL ||
+      ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "") ||
+      isReviewFork(OPENCODE_VERSION)
+    ) {
       yield* Effect.logInfo("update check skipped", {
-        reason: OPENCODE_LOCAL ? "local-install" : "disabled",
+        reason: OPENCODE_LOCAL ? "local-install" : isReviewFork(OPENCODE_VERSION) ? "review-fork" : "disabled",
         version: OPENCODE_VERSION,
         channel: OPENCODE_CHANNEL,
       })
@@ -664,6 +671,11 @@ const make = Effect.gen(function* () {
       return {
         type: "unavailable" as const,
         message: "This build runs from a source checkout. Use an installed OpenCode release to check for updates.",
+      }
+    if (isReviewFork(OPENCODE_VERSION))
+      return {
+        type: "unavailable" as const,
+        message: `This fork build (${OPENCODE_VERSION}) does not upgrade to the official OpenCode release. Rebuild from the review branch instead.`,
       }
     const detected = yield* method()
     if (!detected && installedOwner) {

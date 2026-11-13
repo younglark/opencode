@@ -240,8 +240,11 @@ function assetPane(
 ) {
   const url = (file: string) => escape(assetURL(review.id, token, item.id, file))
   const caption = `<figcaption>${escape(asset.label ? `${asset.label} · ${asset.id}` : asset.id)}</figcaption>`
-  if (item.kind === "video")
+  if (item.kind === "video") {
+    if (annotate)
+      return `<div class="asset-pane" data-asset="${escape(asset.id)}" data-src="${url(asset.stored.file)}"><figure>${caption}</figure></div>`
     return `<div class="asset-pane" data-asset="${escape(asset.id)}"><figure><video controls playsinline preload="metadata" src="${url(asset.stored.file)}"></video>${caption}</figure></div>`
+  }
   const compare = asset.compare
     ? `<details class="more"><summary>对比参考图</summary><img loading="lazy" alt="参考图" src="${url(asset.compare.file)}"></details>`
     : ""
@@ -277,7 +280,7 @@ function itemPane(
           )
           .join("")}</div>`
       : ""
-  const annotate = item.kind === "image" && Boolean(item.feedback?.annotate)
+  const annotate = (item.kind === "image" || item.kind === "video") && Boolean(item.feedback?.annotate)
   const frame = annotate
     ? `<iframe class="annotator-frame" data-annotator data-item="${escape(item.id)}" title="${escape("标注：" + item.title)}" src="${escape(ReviewAnnotator.route(review.id, token))}"></iframe>`
     : ""
@@ -343,10 +346,14 @@ export function approval(input: {
     annotator: ReviewAnnotator.route(review.id, input.token),
     items: items.map((item) => {
       const base = info(item, input.diffs)
-      if (item.kind !== "image" || !item.feedback?.annotate) return base
+      if ((item.kind !== "image" && item.kind !== "video") || !item.feedback?.annotate) return base
       const sources: Record<string, string> = {}
-      for (const asset of item.assets) sources[asset.id] = assetURL(review.id, input.token, item.id, asset.stored.file)
-      return { ...base, annotate: true, sources }
+      const fps: Record<string, number> = {}
+      for (const asset of item.assets) {
+        sources[asset.id] = assetURL(review.id, input.token, item.id, asset.stored.file)
+        if (asset.fps) fps[asset.id] = asset.fps
+      }
+      return { ...base, annotate: true, sources, ...(item.kind === "video" && Object.keys(fps).length > 0 ? { fps } : {}) }
     }),
   }
   const wait =

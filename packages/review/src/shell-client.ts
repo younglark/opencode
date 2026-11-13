@@ -139,6 +139,8 @@ export const SCRIPT = String.raw`
       asset,
       src,
       name: asset,
+      kind: item.kind,
+      fps: item.fps && item.fps[asset],
       draft: saved && saved.raw ? { raw: saved.raw } : undefined,
     }
     return new Promise((resolve, reject) => {
@@ -172,7 +174,8 @@ export const SCRIPT = String.raw`
     if (annotations) saved.annotations = annotations
     if (raw !== undefined) saved.raw = raw
     if (files) saved.files = files
-    else if (saved.annotations && saved.annotations.length) saved.files = [fileName(itemID, asset)]
+    else if (files === undefined && saved.annotations && saved.annotations.length && !saved.annotations.some((mark) => mark.frame))
+      saved.files = saved.files || [fileName(itemID, asset)]
     save()
   }
 
@@ -334,9 +337,10 @@ export const SCRIPT = String.raw`
           try {
             await loadAnnotator(item, id)
             const exported = await requestExport(iframe)
-            const name = (exported.file && exported.file.name) || fileName(item.id, id)
-            storeMarks(item.id, id, exported.annotations, exported.raw, exported.file && exported.file.dataUrl ? [name] : [])
-            if (exported.file && exported.file.dataUrl) files[name] = exported.file.dataUrl
+            const uploads = Array.isArray(exported.files) && exported.files.length ? exported.files : exported.file ? [exported.file] : []
+            const names = uploads.filter((file) => file && file.name && file.dataUrl).map((file) => file.name)
+            storeMarks(item.id, id, exported.annotations, exported.raw, names)
+            for (const file of uploads) if (file && file.name && file.dataUrl) files[file.name] = file.dataUrl
           } catch (error) {}
         }
       }

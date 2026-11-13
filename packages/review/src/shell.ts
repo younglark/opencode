@@ -20,8 +20,10 @@ export interface AssetDraft {
   text?: string
   /** Structured marks for this asset; restored after a refresh. */
   annotations?: ReviewResult.Annotation[]
-  /** Annotator-native export without embedded images (feedback-minimal-4). */
+  /** Annotator-native export without embedded images (feedback-minimal-4 or video-feedback-1). */
   raw?: unknown
+  /** Snapshot file names to attach on submit. */
+  files?: string[]
 }
 
 export interface ItemDraft {
@@ -134,6 +136,7 @@ export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): Revi
           ...(text ? { text } : {}),
           ...(annotations?.length ? { annotations } : {}),
           ...(asset.raw !== undefined ? { raw: asset.raw } : {}),
+          ...(asset.files?.length ? { files: asset.files } : {}),
         },
       ]
     })

@@ -142,6 +142,35 @@ describe("submission", () => {
     })
   })
 
+
+  test("keeps video frame annotations and raw overlay data in the submission", () => {
+    const marks = [
+      {
+        n: 1,
+        shape: "rect" as const,
+        rect: { x1: 10, y1: 20, x2: 80, y2: 90 },
+        text: "拖尾断开",
+        frame: { timeMs: 3200, timeUs: 3_200_000, index: 96 },
+      },
+    ]
+    const raw = { schemaVersion: "video-feedback-1", frames: [], fps: 30 }
+    const draft: ReviewShell.Draft = {
+      v: 1,
+      decision: "changes",
+      items: { clip: { assets: { c: { annotations: marks, raw, files: ["clip-c-f96.annotated.png"] } } } },
+    }
+    expect(ReviewShell.status(clip, draft)).toBe("open")
+    expect(ReviewShell.toSubmission(items, draft)).toEqual({
+      decision: "changes",
+      items: [
+        {
+          id: "clip",
+          assets: [{ asset: "c", annotations: marks, raw, files: ["clip-c-f96.annotated.png"] }],
+        },
+      ],
+    })
+  })
+
   test("suggests changes when anything failed, continue when every judged item passed, and keeps stop", () => {
     const draft: ReviewShell.Draft = { v: 1, decision: "continue", items: { shots: { verdict: "fail" } } }
     expect(ReviewShell.suggest(items, draft)).toBe("changes")

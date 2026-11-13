@@ -211,6 +211,46 @@ describe("approval shell", () => {
     expect(data.items[1].annotate).toBeUndefined()
   })
 
+  test("uses the annotator for a video item that asks for marks, and leaves others view-only", () => {
+    const videoReview = {
+      ...review,
+      origin: "agent" as const,
+      request: {
+        items: [
+          {
+            id: "clip",
+            kind: "video" as const,
+            title: "Clip",
+            bundle: "r1",
+            feedback: { annotate: true, verdict: true },
+            assets: [{ id: "c", stored: stored("c.mp4", "video/mp4"), fps: 24 }],
+          },
+          {
+            id: "plain",
+            kind: "video" as const,
+            title: "Plain",
+            bundle: "r1",
+            feedback: { verdict: true },
+            assets: [{ id: "p", stored: stored("p.mp4", "video/mp4") }],
+          },
+        ],
+        wait: { mode: "async" as const },
+      },
+    }
+    const html = ReviewPage.approval({ review: videoReview, token: "tok", diffs: [] })
+    expect(html).toContain('data-annotator')
+    expect(html).toContain("/api/review/r1/annotator?t=tok")
+    expect(html).toContain("/api/review/r1/a/tok/clip/c.mp4")
+    expect(html).toContain("<video")
+    expect(html).toContain("/api/review/r1/a/tok/plain/p.mp4")
+    const payload = JSON.parse(html.split('id="review-data">')[1].split("</script>")[0])
+    expect(payload.items[0].annotate).toBe(true)
+    expect(payload.items[0].sources.c).toContain("/api/review/r1/a/tok/clip/c.mp4")
+    expect(payload.items[0].fps.c).toBe(24)
+    expect(payload.items[1].annotate).toBeUndefined()
+    expect(html).toContain("review-annotator:load")
+  })
+
   test("migrates the diff with per-file verdicts and honors a file filter", () => {
     expect(page).toContain('id="d-diff-0"')
     expect(page).toContain('data-asset="a.ts"')

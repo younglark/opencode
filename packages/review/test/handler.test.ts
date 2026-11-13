@@ -57,8 +57,8 @@ describe("approval page", () => {
     expect(page.html).toContain("Fix &lt;bug&gt;")
     expect(page.html).toContain("+&lt;new&gt;")
     expect(page.html).not.toContain("<new>")
-    expect(page.html).toContain('name="decision" value="changes"')
-    expect(page.html).toContain(`value="${h.token}"`)
+    expect(page.html).toContain('data-decision="changes"')
+    expect(page.html).toContain(h.token)
   })
 
   test("renders task context when the session can supply it", async () => {

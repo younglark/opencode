@@ -19,6 +19,7 @@ for a while, and writes the reviewer's decision back into the session.
     exist, every channel carries both links, labeled 外网 and 局域网, with the same token; a server with only one address sends that one.
 - The plugin (this package's default export) owns settings, timers and review records in its plugin storage.
   Timers are stored as absolute deadlines and restored when a Location starts again.
+- The approval page (`src/page.ts`, `src/shell.ts`) is an item list plus a per-item viewer: images and videos are view-only (annotation is later), diffs are the existing folded file view with a pass/fail and comment per file, and a custom page loads in a sandboxed iframe. Pass/fail and named checks sit in the item's feedback pane. A draft is saved to `localStorage` under `opencode.review.draft.<id>` on every change and restored after a refresh; a failed submit keeps it. The page posts once to `/api/review/:id/submit` as JSON. On a phone the item list is a strip, the feedback pane is a drawer, and the keyboard uses `visualViewport`; from 900px the layout is a three-column desktop shell. J/K (or arrows) move between items, P/F set pass/fail, Ctrl/⌘+Enter submits.
 - The server layer (`packages/server/src/review.ts`) owns links and notifications, because only it knows the LAN
   and OpenTunnel URLs, and serves `/api/review/:id` outside the protocol `HttpApi`. Each link carries a one-time
   32-byte token; only its sha256 is stored, it expires after 2 hours and is spent on submit. A submit is refused

@@ -73,7 +73,7 @@ describe("approval page", () => {
 
   test("renders context, summary, file list and escaped diffs", () => {
     const page = html()
-    expect(page).toContain("任务背景")
+    expect(page).toContain("任务背景与摘要")
     expect(page).toContain("最初的请求")
     expect(page).toContain("请修复 &lt;登录&gt;")
     expect(page).toContain("最近对话")
@@ -84,27 +84,25 @@ describe("approval page", () => {
     expect(page).toContain("改了 a.ts 与 b.ts")
     expect(page).toContain("Fix &lt;bug&gt;")
     expect(page).toContain("2 个文件")
-    expect(page).toContain('href="#f-0"')
-    expect(page).toContain('id="f-0"')
+    expect(page).toContain('href="#d-diff-0"')
+    expect(page).toContain('id="d-diff-0"')
     expect(page).toContain("a.ts")
     expect(page).toContain("+1")
     expect(page).toContain("-1")
     expect(page).toContain("+&lt;new&gt;")
     expect(page).not.toContain("<new>")
-    expect(page).toContain('name="decision" value="changes"')
-    expect(page).toContain('value="tok&amp;en"')
+    expect(page).toContain('data-decision="changes"')
+    expect(page).toContain("tok\\u0026en")
   })
 
   test("truncates a long diff behind 显示全部 and offers a per-file comment", () => {
     const page = html()
     expect(page).toContain("显示全部")
-    expect(page).toContain('name="file-0"')
-    expect(page).toContain('name="comment-0"')
-    expect(page).toContain('name="file-1"')
-    expect(page).toContain('name="comment-1"')
-    expect(page).toContain('value="b.ts"')
+    expect(page).toContain('data-asset="b.ts"')
     expect(page).toContain("对这个文件的意见")
-    expect(page).toContain('form="review"')
+    expect(page).toContain('data-verdict="pass"')
+    expect(page).toContain('data-verdict="fail"')
+    expect(page).toContain("提交全部")
   })
 
   test("follows the system color scheme and speaks Chinese by default", () => {
@@ -114,7 +112,11 @@ describe("approval page", () => {
     expect(page).toContain("没问题，继续")
     expect(page).toContain("需要修改")
     expect(page).toContain("先停下")
-    expect(page).toContain("提交")
+    expect(page).toContain("提交全部")
+    expect(page).toContain("/api/review/r1/submit")
+    expect(page).toContain("opencode.review.draft.")
+    expect(page).toContain("min-width:900px")
+    expect(page).toContain("visualViewport")
   })
 
   test("keeps a short patch visible without 显示全部", () => {
@@ -122,6 +124,113 @@ describe("approval page", () => {
     expect(page).not.toContain("显示全部")
     expect(page).not.toContain("本轮没有文件改动。")
     expect(page).toContain("+&lt;new&gt;")
+  })
+})
+
+describe("approval shell", () => {
+  const stored = (file: string, mime: string) => ({
+    file,
+    mime,
+    size: 8,
+    sha256: "abc",
+    source: file,
+  })
+  const request = {
+    items: [
+      {
+        id: "shots",
+        kind: "image" as const,
+        title: "Renders",
+        note: "看灯光",
+        bundle: "r1",
+        feedback: { verdict: true, required: true, checks: [{ id: "shadow", label: "阴影正确" }] },
+        assets: [
+          {
+            id: "far",
+            label: "远景",
+            stored: stored("far.png", "image/png"),
+            compare: stored("far.compare.png", "image/png"),
+          },
+          { id: "near", label: "近景", stored: stored("near.png", "image/png") },
+        ],
+      },
+      {
+        id: "clip",
+        kind: "video" as const,
+        title: "Clip",
+        bundle: "r1",
+        feedback: { verdict: true },
+        assets: [{ id: "c", stored: stored("c.mp4", "video/mp4"), fps: 30 }],
+      },
+      {
+        id: "diff",
+        kind: "diff" as const,
+        title: "代码改动",
+        bundle: "r1",
+        feedback: { verdict: true, annotate: true },
+        assets: [],
+        diff: { files: ["a.ts"] },
+      },
+      {
+        id: "ui",
+        kind: "custom" as const,
+        title: "设置页",
+        bundle: "r1",
+        feedback: { required: true },
+        assets: [],
+        custom: { entry: "index.html", files: [] },
+      },
+    ],
+    wait: { mode: "block" as const },
+  }
+  const page = ReviewPage.approval({
+    review: { ...review, origin: "agent", request },
+    token: "tok&en",
+    diffs,
+  })
+
+  test("lists every item, switches image assets, and keeps image and video view-only", () => {
+    expect(page).toContain('data-go="shots"')
+    expect(page).toContain('data-go="clip"')
+    expect(page).toContain('data-go="diff"')
+    expect(page).toContain('data-go="ui"')
+    expect(page).toContain("第 1/4 项")
+    expect(page).toContain('data-asset-go="far"')
+    expect(page).toContain('data-asset-go="near"')
+    expect(page).toContain("/api/review/r1/a/tok%26en/shots/far.png")
+    expect(page).toContain("对比参考图")
+    expect(page).toContain("<video")
+    expect(page).not.toContain("requestVideoFrameCallback")
+  })
+
+  test("migrates the diff with per-file verdicts and honors a file filter", () => {
+    expect(page).toContain('id="d-diff-0"')
+    expect(page).toContain('data-asset="a.ts"')
+    expect(page).not.toContain('data-asset="b.ts"')
+    expect(page).toContain("对这个文件的意见")
+  })
+
+  test("shows pass/fail, checkpoints, a sandboxed custom page, and the JSON submit", () => {
+    expect(page).toContain("阴影正确")
+    expect(page).toContain('data-check="shadow"')
+    expect(page).toContain("本项结论")
+    expect(page).toContain('sandbox="allow-scripts allow-forms"')
+    expect(page).toContain("/api/review/r1/a/tok%26en/ui/index.html")
+    expect(page).toContain("/api/review/r1/submit")
+    expect(page).toContain("正在等你的反馈")
+    const payload = page.split('id="review-data">')[1].split("</script>")[0]
+    expect(payload).toContain("tok\\u0026en")
+    expect(JSON.parse(payload).token).toBe("tok&en")
+  })
+})
+
+describe("json embedding", () => {
+  test("escapes angle brackets and ampersands so a title cannot break out of the script", () => {
+    const encoded = ReviewPage.jsonScript({ token: "tok&en", title: "</script><b>x</b>" })
+    expect(encoded).toContain("\\u003c")
+    expect(encoded).toContain("\\u0026")
+    expect(encoded).not.toContain("</script>")
+    expect(encoded).not.toContain("<b>")
   })
 })
 

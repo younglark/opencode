@@ -28,7 +28,8 @@ export function parse(input: string): Parsed {
     total += Number(match[1]) * UNITS[match[2]]
     consumed += match[0]
   }
-  if (consumed.replace(/\s+/g, "") !== text.replace(/\s+/g, "")) return { ok: false, message: `Invalid duration: ${input}` }
+  if (consumed.replace(/\s+/g, "") !== text.replace(/\s+/g, ""))
+    return { ok: false, message: `Invalid duration: ${input}` }
   return bound(total, input)
 }
 

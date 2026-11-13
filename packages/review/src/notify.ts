@@ -12,7 +12,10 @@ export interface Item extends ReviewBridge.Ready {
   readonly url: string
 }
 
-export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{
+export type Fetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string },
+) => Promise<{
   readonly ok: boolean
   readonly status: number
   text(): Promise<string>
@@ -59,7 +62,12 @@ export function feishu(items: ReadonlyArray<Item>) {
         zh_cn: {
           title: title(items),
           content: items.flatMap((item, index) => [
-            [{ tag: "text", text: `${items.length > 1 ? `${index + 1}. ` : ""}【${project(item.directory)}】${item.title}` }],
+            [
+              {
+                tag: "text",
+                text: `${items.length > 1 ? `${index + 1}. ` : ""}【${project(item.directory)}】${item.title}`,
+              },
+            ],
             [{ tag: "text", text: clip(item.summary) }],
             [{ tag: "a", text: "打开审查页", href: item.url }],
           ]),

@@ -24,7 +24,10 @@ export interface Storage {
     readonly prefix: string
     readonly after?: string
     readonly limit?: number
-  }) => Effect.Effect<{ readonly entries: ReadonlyArray<{ readonly key: string; readonly value: Schema.Json }>; readonly next?: string }>
+  }) => Effect.Effect<{
+    readonly entries: ReadonlyArray<{ readonly key: string; readonly value: Schema.Json }>
+    readonly next?: string
+  }>
 }
 
 /** Everything the plugin needs from its host, so the logic runs against fakes in tests. */
@@ -255,7 +258,20 @@ export function make(deps: Deps) {
     } while (after !== undefined)
   })
 
-  return { settings, finished, started, humanInput, removed, restore, fire, open, status, command, readReview, openReview }
+  return {
+    settings,
+    finished,
+    started,
+    humanInput,
+    removed,
+    restore,
+    fire,
+    open,
+    status,
+    command,
+    readReview,
+    openReview,
+  }
 }
 
 export type Controller = ReturnType<typeof make>

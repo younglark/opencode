@@ -61,7 +61,9 @@ export const layer = (urls: () => ReadonlyArray<string>) =>
         prompt: (input) =>
           sessions.get(Session.ID.make(input.sessionID)).pipe(
             Effect.flatMap((info) =>
-              sessions.prompt({ sessionID: info.id, text: input.text, metadata: input.metadata }).pipe(instances.provide(info)),
+              sessions
+                .prompt({ sessionID: info.id, text: input.text, metadata: input.metadata })
+                .pipe(instances.provide(info)),
             ),
             Effect.asVoid,
           ),

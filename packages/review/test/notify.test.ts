@@ -78,7 +78,7 @@ describe("notifier", () => {
     const body = calls[0].body
     expect(body.content.post.zh_cn.title).toBe("opencode 等待审查：Session 1")
     expect(JSON.stringify(body)).toContain("r1b?t=tok1b")
-    expect(JSON.stringify(body)).not.toContain("r1?t=tok1\"")
+    expect(JSON.stringify(body)).not.toContain('r1?t=tok1"')
   })
 
   test("never logs webhook URLs on failure, and reports a missing configuration", async () => {

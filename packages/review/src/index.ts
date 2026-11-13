@@ -110,12 +110,10 @@ export default Plugin.define({
         )
 
       // An idle project's Location unloads after a while and takes its timers with it; deadlines stay in storage.
-      yield* controller
-        .restore()
-        .pipe(
-          Effect.catchCause((cause) => Effect.logWarning("review: failed to restore timers", { cause })),
-          Effect.forkScoped({ startImmediately: true }),
-        )
+      yield* controller.restore().pipe(
+        Effect.catchCause((cause) => Effect.logWarning("review: failed to restore timers", { cause })),
+        Effect.forkScoped({ startImmediately: true }),
+      )
 
       yield* ctx.command.transform((editor) => {
         editor.add({

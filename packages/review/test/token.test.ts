@@ -65,7 +65,10 @@ describe("inbox filtering", () => {
     expect(ReviewInbox.isHumanInput({ type: "user", payload: { text: "hi" } })).toBe(true)
     expect(ReviewInbox.isHumanInput({ type: "user", payload: { text: "x", metadata: { source: "goal" } } })).toBe(true)
     expect(
-      ReviewInbox.isHumanInput({ type: "user", payload: { text: "x", metadata: ReviewFeedback.metadata("r", "continue") } }),
+      ReviewInbox.isHumanInput({
+        type: "user",
+        payload: { text: "x", metadata: ReviewFeedback.metadata("r", "continue") },
+      }),
     ).toBe(false)
     expect(ReviewInbox.isHumanInput({ type: "synthetic", payload: { text: "notice" } })).toBe(false)
     expect(ReviewInbox.isHumanInput({ type: "compaction", payload: {} })).toBe(false)

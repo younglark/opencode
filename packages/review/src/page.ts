@@ -97,8 +97,16 @@ export function approval(input: {
 const MESSAGES: Record<Exclude<ReviewDecide.Outcome, "ok">, { title: string; body: string; status: number }> = {
   invalid: { title: "链接无效", body: "这个审查链接无效或已被替换。", status: 404 },
   used: { title: "已经提交过", body: "这个审查链接已经提交过，不能重复使用。", status: 409 },
-  expired: { title: "链接已过期", body: "这个审查链接已过期。回到电脑上继续，或在会话里运行 /review-remote now 重新发送。", status: 410 },
-  continued: { title: "已在电脑端继续", body: "这个会话在你打开链接之后已经在电脑上继续了，手机端的反馈不会再写回。", status: 409 },
+  expired: {
+    title: "链接已过期",
+    body: "这个审查链接已过期。回到电脑上继续，或在会话里运行 /review-remote now 重新发送。",
+    status: 410,
+  },
+  continued: {
+    title: "已在电脑端继续",
+    body: "这个会话在你打开链接之后已经在电脑上继续了，手机端的反馈不会再写回。",
+    status: 409,
+  },
 }
 
 export function outcome(kind: Exclude<ReviewDecide.Outcome, "ok">) {

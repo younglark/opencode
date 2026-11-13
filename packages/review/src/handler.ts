@@ -39,6 +39,15 @@ const decodeDecision = Schema.decodeUnknownOption(ReviewState.Decision)
 const json = (value: unknown) => value as Schema.Json
 
 export function make(deps: Deps) {
+  /** Adds or drops one id in the session's open list, keeping the others. */
+  const setOpen = Effect.fn("ReviewHandler.setOpen")(function* (sessionID: string, reviewID: string, open: boolean) {
+    const key = ReviewState.OPEN_PREFIX + sessionID
+    const ids = ReviewState.openIDs(yield* deps.storage.get(key)).filter((id) => id !== reviewID)
+    if (open) ids.push(reviewID)
+    if (ids.length === 0) yield* deps.storage.remove(key)
+    else yield* deps.storage.set(key, json(ids))
+  })
+
   const load = Effect.fn("ReviewHandler.load")(function* (reviewID: string, token: string | undefined | null) {
     const review = ReviewState.review(yield* deps.storage.get(ReviewState.REVIEW_PREFIX + reviewID))
     const session = review ? yield* deps.session(review.sessionID) : undefined
@@ -78,8 +87,7 @@ export function make(deps: Deps) {
       ...(form.text ? { feedback: form.text.slice(0, ReviewFeedback.MAX_TEXT) } : {}),
     }
     yield* deps.storage.set(ReviewState.REVIEW_PREFIX + review.id, json(closed))
-    const open = yield* deps.storage.get(ReviewState.OPEN_PREFIX + review.sessionID)
-    if (open === review.id) yield* deps.storage.remove(ReviewState.OPEN_PREFIX + review.sessionID)
+    yield* setOpen(review.sessionID, review.id, false)
     const text = ReviewFeedback.prompt(decision.value, form.text ?? undefined, fileComments)
     if (text === undefined) return { status: 200, html: ReviewPage.submitted(decision.value) } satisfies Response
     const sent = yield* deps
@@ -95,7 +103,7 @@ export function make(deps: Deps) {
     if (!sent) {
       // Give the link back so the phone can retry.
       yield* deps.storage.set(ReviewState.REVIEW_PREFIX + review.id, json(review))
-      yield* deps.storage.set(ReviewState.OPEN_PREFIX + review.sessionID, review.id)
+      yield* setOpen(review.sessionID, review.id, true)
       return ReviewPage.failed()
     }
     return { status: 200, html: ReviewPage.submitted(decision.value) } satisfies Response

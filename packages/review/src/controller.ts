@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import type { ReviewBridge } from "./bridge.js"
 import { ReviewCommand } from "./command.js"
 import { ReviewDuration } from "./duration.js"
+import { ReviewRequest } from "./request.js"
 import type { ReviewRpc } from "./rpc.js"
 import { ReviewState } from "./state.js"
 import { ReviewStatus } from "./status.js"
@@ -47,7 +48,18 @@ export interface Deps {
   readonly ttlMs?: number
   /** The server layer's URLs and webhooks; undefined when none runs, which leaves reachability unknown. */
   readonly server?: () => ReviewStatus.Server | undefined
+  /** Copies an agent's assets into review storage directory `bundle`; fails with a message the agent can act on. */
+  readonly snapshot?: (input: {
+    readonly directory: string
+    readonly bundle: string
+    readonly items: ReadonlyArray<ReviewRequest.Item>
+  }) => Effect.Effect<ReadonlyArray<ReviewRequest.StoredItem>, Error>
 }
+
+/** What `review_request` gets back: a sent review, or items parked for the next idle / `now` review. */
+export type Requested =
+  | { readonly type: "sent"; readonly review: ReviewState.Review }
+  | { readonly type: "queued"; readonly count: number }
 
 const json = (value: unknown) => value as Schema.Json
 
@@ -61,11 +73,24 @@ export function make(deps: Deps) {
     deps.storage.get(ReviewState.TIMER_PREFIX + sessionID).pipe(Effect.map(ReviewState.timer))
   const readReview = (reviewID: string) =>
     deps.storage.get(ReviewState.REVIEW_PREFIX + reviewID).pipe(Effect.map(ReviewState.review))
+  const openList = (sessionID: string) =>
+    deps.storage.get(ReviewState.OPEN_PREFIX + sessionID).pipe(Effect.map(ReviewState.openIDs))
+  const writeOpen = (sessionID: string, ids: ReadonlyArray<string>) =>
+    ids.length === 0
+      ? deps.storage.remove(ReviewState.OPEN_PREFIX + sessionID)
+      : deps.storage.set(ReviewState.OPEN_PREFIX + sessionID, json(ids))
+  /** Every review of the session still open, oldest first. */
+  const openReviews = Effect.fn("ReviewController.openReviews")(function* (sessionID: string) {
+    const result: ReviewState.Review[] = []
+    for (const id of yield* openList(sessionID)) {
+      const review = yield* readReview(id)
+      if (review?.status === "open") result.push(review)
+    }
+    return result
+  })
+  /** The session's open idle / `now` review: there is at most one. */
   const openReview = Effect.fn("ReviewController.openReview")(function* (sessionID: string) {
-    const id = yield* deps.storage.get(ReviewState.OPEN_PREFIX + sessionID)
-    if (typeof id !== "string") return undefined
-    const review = yield* readReview(id)
-    return review?.status === "open" ? review : undefined
+    return (yield* openReviews(sessionID)).find(ReviewState.followsSession)
   })
 
   const clearTimer = Effect.fn("ReviewController.clearTimer")(function* (sessionID: string) {
@@ -73,16 +98,26 @@ export function make(deps: Deps) {
     yield* deps.storage.remove(ReviewState.TIMER_PREFIX + sessionID)
   })
 
-  /** Marks the session's open review as overtaken by work on the desktop. */
-  const supersede = Effect.fn("ReviewController.supersede")(function* (sessionID: string) {
-    const review = yield* openReview(sessionID)
-    if (!review) return
-    yield* deps.storage.set(
-      ReviewState.REVIEW_PREFIX + review.id,
-      json({ ...review, status: "superseded", closedAt: yield* deps.now }),
-    )
-    yield* deps.storage.remove(ReviewState.OPEN_PREFIX + sessionID)
+  /**
+   * Marks the session's open idle / `now` review as overtaken by work on the desktop. Agent reviews stay open: the
+   * agent decided how to wait for them. `all` also ends those, for a deleted session.
+   */
+  const supersede = Effect.fn("ReviewController.supersede")(function* (sessionID: string, all = false) {
+    const reviews = yield* openReviews(sessionID)
+    const ended = reviews.filter((review) => all || ReviewState.followsSession(review))
+    const now = yield* deps.now
+    for (const review of ended)
+      yield* deps.storage.set(
+        ReviewState.REVIEW_PREFIX + review.id,
+        json({ ...review, status: "superseded", closedAt: now }),
+      )
+    if (all) yield* deps.storage.remove(ReviewState.PENDING_PREFIX + sessionID)
+    const kept = reviews.filter((review) => !ended.includes(review)).map((review) => review.id)
+    yield* writeOpen(sessionID, kept)
   })
+
+  const readPending = (sessionID: string) =>
+    deps.storage.get(ReviewState.PENDING_PREFIX + sessionID).pipe(Effect.map(ReviewState.pending))
 
   const fallbackSummary = (session: SessionView) => session.title ?? "Session finished"
 
@@ -94,12 +129,15 @@ export function make(deps: Deps) {
     if (existing && !force && existing.marker === marker && existing.expiresAt > now) return existing
     if (existing) yield* supersede(session.id)
     const token = ReviewToken.generate()
+    const id = ReviewToken.id()
     const summary = yield* deps.summarize(session.id).pipe(
       Effect.map((text) => (text.trim() === "" ? fallbackSummary(session) : text.trim())),
       Effect.catchCause(() => Effect.succeed(fallbackSummary(session))),
     )
+    // Items an agent parked for this review follow the diff.
+    const parked = yield* readPending(session.id)
     const review: ReviewState.Review = {
-      id: ReviewToken.id(),
+      id,
       sessionID: session.id,
       directory: session.directory,
       title: session.title ?? session.id,
@@ -109,12 +147,20 @@ export function make(deps: Deps) {
       createdAt: now,
       expiresAt: now + ttl,
       status: "open",
+      origin: force ? "now" : "idle",
+      ...(parked.length > 0 ? { request: { items: [ReviewRequest.diffItem(id), ...parked] } } : {}),
     }
     // The session may have moved on while the summary was generated.
     const latest = yield* deps.session(session.id)
     if (!latest || ReviewState.running(latest) || ReviewState.marker(latest) !== marker) return undefined
     yield* deps.storage.set(ReviewState.REVIEW_PREFIX + review.id, json(review))
-    yield* deps.storage.set(ReviewState.OPEN_PREFIX + session.id, review.id)
+    yield* writeOpen(session.id, [...(yield* openList(session.id)), review.id])
+    if (parked.length > 0) yield* deps.storage.remove(ReviewState.PENDING_PREFIX + session.id)
+    yield* publish(review, token)
+    return review
+  })
+
+  const publish = Effect.fn("ReviewController.publish")(function* (review: ReviewState.Review, token: string) {
     const delivered = yield* deps.publish({
       reviewID: review.id,
       token,
@@ -124,7 +170,74 @@ export function make(deps: Deps) {
       directory: review.directory,
     })
     if (!delivered) yield* Effect.logWarning("review opened but no notifier is registered", { reviewID: review.id })
-    return review
+  })
+
+  /**
+   * An agent asked for a review mid-task (`review_request`). Snapshots its assets, then either opens and sends an
+   * agent review, or parks the items for the next idle / `now` review. `id` lets the caller register a waiter first.
+   */
+  const request = Effect.fn("ReviewController.request")(function* (
+    sessionID: string,
+    raw: ReviewRequest.Input,
+    id: string = ReviewToken.id(),
+  ) {
+    if (!(yield* settings).enabled)
+      return yield* Effect.fail(new Error("Remote review is off. Ask the user to run /review-remote on first."))
+    const checked = ReviewRequest.validate(raw)
+    if (!checked.ok) return yield* Effect.fail(new Error("Invalid review request:\n- " + checked.errors.join("\n- ")))
+    const input = checked.input
+    if (input.send !== "with_next_idle" && !ReviewStatus.reachable(ReviewStatus.addresses(server())))
+      return yield* Effect.fail(
+        new Error(ReviewStatus.hints(server())[0]?.message ?? "No reachable address for a review link"),
+      )
+    const session = yield* deps.session(sessionID)
+    if (!session) return yield* Effect.fail(new Error("Session not found"))
+    if (!deps.snapshot)
+      return yield* Effect.fail(new Error("Review storage is unavailable: the review server is not running"))
+    const bundle = input.send === "with_next_idle" ? "p-" + id : id
+    const items = yield* deps.snapshot({ directory: session.directory, bundle, items: input.items })
+    if (input.send === "with_next_idle") {
+      const parked = yield* readPending(sessionID)
+      const taken = new Set(parked.map((item) => item.id))
+      const clash = items.find((item) => taken.has(item.id) || item.id === "diff")
+      if (clash) return yield* Effect.fail(new Error(`Item id "${clash.id}" is already waiting for the next review`))
+      yield* deps.storage.set(ReviewState.PENDING_PREFIX + sessionID, json([...parked, ...items]))
+      return { type: "queued", count: parked.length + items.length } satisfies Requested
+    }
+    const now = yield* deps.now
+    const token = ReviewToken.generate()
+    const review: ReviewState.Review = {
+      id,
+      sessionID,
+      directory: session.directory,
+      title: input.title,
+      summary: input.summary?.trim() || input.title,
+      tokenHash: ReviewToken.hash(token),
+      marker: ReviewState.marker(session),
+      createdAt: now,
+      expiresAt: now + ttl,
+      status: "open",
+      origin: "agent",
+      request: { items, ...(input.wait ? { wait: input.wait } : {}) },
+    }
+    yield* deps.storage.set(ReviewState.REVIEW_PREFIX + review.id, json(review))
+    yield* writeOpen(sessionID, [...(yield* openList(sessionID)), review.id])
+    yield* publish(review, token)
+    return { type: "sent", review } satisfies Requested
+  })
+
+  /** Ends an agent review whose wait ran out with `onTimeout.link: close`. */
+  const close = Effect.fn("ReviewController.close")(function* (reviewID: string) {
+    const review = yield* readReview(reviewID)
+    if (!review || review.status !== "open") return
+    yield* deps.storage.set(
+      ReviewState.REVIEW_PREFIX + review.id,
+      json({ ...review, status: "closed", closedAt: yield* deps.now }),
+    )
+    yield* writeOpen(
+      review.sessionID,
+      (yield* openList(review.sessionID)).filter((id) => id !== reviewID),
+    )
   })
 
   const fire = Effect.fn("ReviewController.fire")(function* (sessionID: string) {
@@ -174,7 +287,7 @@ export function make(deps: Deps) {
 
   const removed = Effect.fn("ReviewController.removed")(function* (sessionID: string) {
     yield* clearTimer(sessionID)
-    yield* supersede(sessionID)
+    yield* supersede(sessionID, true)
   })
 
   /** Re-arms this Location's timers from their stored deadlines; overdue ones fire right away. */
@@ -208,11 +321,11 @@ export function make(deps: Deps) {
     let after: string | undefined
     do {
       const page = yield* deps.storage.scan({ prefix: ReviewState.OPEN_PREFIX, after, limit: 100 })
-      for (const entry of page.entries) {
-        if (typeof entry.value !== "string") continue
-        const review = yield* readReview(entry.value)
-        if (review?.status === "open" && review.expiresAt > now) count++
-      }
+      for (const entry of page.entries)
+        for (const id of ReviewState.openIDs(entry.value)) {
+          const review = yield* readReview(id)
+          if (review?.status === "open" && review.expiresAt > now) count++
+        }
       after = page.next
     } while (after !== undefined)
     return count
@@ -320,6 +433,9 @@ export function make(deps: Deps) {
     command,
     readReview,
     openReview,
+    openReviews,
+    request,
+    close,
   }
 }
 

@@ -146,6 +146,6 @@ describe("submit", () => {
     const page = await run(h.handler.submit("r1", { t: h.token, decision: "continue" }))
     expect(page.status).toBe(502)
     expect(h.stored().status).toBe("open")
-    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toBe("r1")
+    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual(["r1"])
   })
 })

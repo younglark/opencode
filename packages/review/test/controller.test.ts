@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import type { ReviewBridge } from "../src/bridge.js"
 import { ReviewController } from "../src/controller.js"
+import type { ReviewRequest } from "../src/request.js"
 import { ReviewState } from "../src/state.js"
 import type { ReviewStatus } from "../src/status.js"
 import { ReviewToken } from "../src/token.js"
@@ -15,6 +16,7 @@ function harness(
   const sessions = new Map<string, ReviewController.SessionView>()
   const scheduled = new Map<string, { delayMs: number; effect: Effect.Effect<void> }>()
   const published: ReviewBridge.Ready[] = []
+  const snapshots: { directory: string; bundle: string }[] = []
   const controller = ReviewController.make({
     directory: options.directory ?? "/repo",
     storage,
@@ -25,6 +27,22 @@ function harness(
     schedule: (id, delayMs, effect) => Effect.sync(() => void scheduled.set(id, { delayMs, effect })),
     cancel: (id) => Effect.sync(() => void scheduled.delete(id)),
     server: () => options.server,
+    snapshot: (input) =>
+      Effect.sync(() => {
+        snapshots.push(input)
+        return input.items.map(
+          (item): ReviewRequest.StoredItem => ({
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            bundle: input.bundle,
+            assets: (item.assets ?? []).map((asset) => ({
+              id: asset.id ?? "x",
+              stored: { file: asset.path, mime: "image/png", size: 1, sha256: "h", source: asset.path },
+            })),
+          }),
+        )
+      }),
   })
   const idleSession = (id: string, busy = 500, extra: Partial<ReviewController.SessionView> = {}) =>
     sessions.set(id, { id, title: `title ${id}`, directory: "/repo", busy, idle: busy + 100, ...extra })
@@ -35,7 +53,7 @@ function harness(
     scheduled.delete(id)
     if (entry) await run(entry.effect)
   }
-  return { storage, clock, sessions, scheduled, published, controller, idleSession, enable, fireScheduled }
+  return { storage, clock, sessions, scheduled, published, snapshots, controller, idleSession, enable, fireScheduled }
 }
 
 describe("settings and command", () => {
@@ -178,7 +196,7 @@ describe("timer", () => {
     expect(h.published).toHaveLength(2)
     const [first, second] = h.published
     expect(ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + first.reviewID))?.status).toBe("superseded")
-    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toBe(second.reviewID)
+    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual([second.reviewID])
     h.idleSession("busy", 900, { idle: 100 })
     expect(await Effect.runPromise(Effect.flip(h.controller.command("busy", "now")))).toBeInstanceOf(Error)
   })
@@ -241,5 +259,111 @@ describe("rpc status and run", () => {
     expect(result.ok).toBe(true)
     expect(result.status).toMatchObject({ addressesKnown: false, pending: 1, hints: [] })
     expect(result.status.reviewUntil).toBe(1_000_000 + ReviewState.DEFAULT_TTL)
+  })
+})
+
+describe("agent reviews", () => {
+  const input = (extra: Partial<ReviewRequest.Input> = {}): ReviewRequest.Input => ({
+    title: "Boss room lighting",
+    items: [{ id: "shots", kind: "image", title: "Renders", assets: [{ path: "out/a.png" }, { path: "out/b.png" }] }],
+    ...extra,
+  })
+  const busy = (h: ReturnType<typeof harness>) =>
+    h.sessions.set("s1", { id: "s1", title: "t", directory: "/repo", busy: 900, idle: 100 })
+
+  test("refuses while the mode is off and reports every invalid field", async () => {
+    const h = harness()
+    busy(h)
+    const off = await Effect.runPromise(Effect.flip(h.controller.request("s1", input())))
+    expect(off.message).toContain("/review-remote on")
+    await h.enable()
+    const bad = await Effect.runPromise(
+      Effect.flip(
+        h.controller.request("s1", {
+          title: " ",
+          items: [
+            { id: "a b", kind: "video", title: "v" },
+            { id: "d", kind: "diff", title: "d", assets: [{ path: "x" }] },
+          ],
+          wait: { mode: "async", timeoutMs: 5 },
+        }),
+      ),
+    )
+    expect(bad.message).toContain("title is empty")
+    expect(bad.message).toContain("items[0].id")
+    expect(bad.message).toContain("video needs at least one asset")
+    expect(bad.message).toContain("diff takes no assets")
+    expect(bad.message).toContain("timeoutMs only applies to mode block")
+    expect(h.published).toHaveLength(0)
+  })
+
+  test("opens an agent review while the session runs, with ids filled from file names", async () => {
+    const h = harness()
+    await h.enable()
+    busy(h)
+    const result = await run(h.controller.request("s1", input({ wait: { mode: "block" } }), "fixed"))
+    expect(result.type).toBe("sent")
+    const review = ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + "fixed"))!
+    expect(review.origin).toBe("agent")
+    expect(review.title).toBe("Boss room lighting")
+    expect(review.request?.wait).toEqual({ mode: "block" })
+    expect(review.request?.items[0].assets.map((asset) => asset.id)).toEqual(["a", "b"])
+    expect(h.snapshots[0]).toMatchObject({ directory: "/repo", bundle: "fixed" })
+    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual(["fixed"])
+    expect(h.published[0]).toMatchObject({ reviewID: "fixed", title: "Boss room lighting" })
+  })
+
+  test("typed input and idle reviews leave agent reviews open; deleting the session ends them", async () => {
+    const h = harness()
+    await h.enable()
+    busy(h)
+    await run(h.controller.request("s1", input(), "agent1"))
+    h.idleSession("s1", 1_000)
+    await run(h.controller.command("s1", "now"))
+    const nowID = h.published[1].reviewID
+    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual(["agent1", nowID])
+    await run(h.controller.humanInput("s1"))
+    expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual(["agent1"])
+    expect(ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + nowID))?.status).toBe("superseded")
+    expect(ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + "agent1"))?.status).toBe("open")
+    await run(h.controller.removed("s1"))
+    expect(h.storage.map.has(ReviewState.OPEN_PREFIX + "s1")).toBe(false)
+    expect(ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + "agent1"))?.status).toBe("superseded")
+  })
+
+  test("with_next_idle parks items without notifying; the next now review carries them after the diff", async () => {
+    const h = harness()
+    await h.enable()
+    busy(h)
+    const queued = await run(h.controller.request("s1", input({ send: "with_next_idle" }), "q1"))
+    expect(queued).toEqual({ type: "queued", count: 1 })
+    expect(h.published).toHaveLength(0)
+    expect(h.snapshots[0].bundle).toBe("p-q1")
+    const clash = await Effect.runPromise(Effect.flip(h.controller.request("s1", input({ send: "with_next_idle" }))))
+    expect(clash.message).toContain("already waiting")
+    h.idleSession("s1", 1_000)
+    await run(h.controller.command("s1", "now"))
+    const review = ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + h.published[0].reviewID))!
+    expect(review.origin).toBe("now")
+    expect(review.request?.items.map((item) => item.id)).toEqual(["diff", "shots"])
+    expect(h.storage.map.has(ReviewState.PENDING_PREFIX + "s1")).toBe(false)
+  })
+
+  test("close ends the link and drops it from the open list", async () => {
+    const h = harness()
+    await h.enable()
+    busy(h)
+    await run(h.controller.request("s1", input(), "c1"))
+    await run(h.controller.close("c1"))
+    expect(ReviewState.review(h.storage.map.get(ReviewState.REVIEW_PREFIX + "c1"))?.status).toBe("closed")
+    expect(h.storage.map.has(ReviewState.OPEN_PREFIX + "s1")).toBe(false)
+  })
+
+  test("refuses a loopback-only server before copying anything", async () => {
+    const h = harness({ server: { urls: ["http://127.0.0.1:4096"], channels: [] } })
+    await h.enable()
+    busy(h)
+    await Effect.runPromise(Effect.flip(h.controller.request("s1", input())))
+    expect(h.snapshots).toHaveLength(0)
   })
 })

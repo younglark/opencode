@@ -4,7 +4,7 @@
  *   bun packages/review/script/preview-pages.ts
  *   bun packages/review/script/preview-pages.ts --out /tmp/review-preview
  *
- * Writes a self-contained site (default `packages/review/preview/dist`, gitignored).
+ * Writes a self-contained site (default `packages/review/preview/dist`, gitignored) from the current approval shell.
  * Image and custom-page fixtures are generated here; the WebM is recorded once with
  * Chrome (if present) into `packages/review/preview/fixtures/` and committed so CI
  * does not need a browser. Exit 0 means the site was written.

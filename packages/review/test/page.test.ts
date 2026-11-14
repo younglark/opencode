@@ -120,6 +120,24 @@ describe("approval page", () => {
     expect(page).toContain("visualViewport")
   })
 
+  test("keeps task context folded, docks feedback, and hints shortcuts only on desktop", () => {
+    const page = html()
+    expect(page).toContain('<details class="card context-panel">')
+    expect(page).not.toContain('<details class="card context-panel" open')
+    expect(page).toContain('data-drawer')
+    expect(page).toContain("本项反馈")
+    expect(page).toContain("data-shortcut-hint")
+    expect(page).toContain("J / K 切换项")
+    expect(page).toContain(".shortcut-hint{display:none")
+    expect(page).toContain("@media (min-width:900px)")
+    expect(page).toContain(".shortcut-hint{display:block}")
+    expect(page).toContain("min-height:44px")
+    expect(page).toContain("--dock")
+    expect(page).toMatch(/\[data-submit\][^}]*min-height:44px/)
+    expect(page).not.toContain("disabled>提交全部")
+    expect(page).not.toContain("swipe")
+  })
+
   test("keeps a short patch visible without 显示全部", () => {
     const page = ReviewPage.diffHTML([diffs[0]])
     expect(page).not.toContain("显示全部")
@@ -326,6 +344,15 @@ describe("approval shell", () => {
     expect(ReviewPage.assetURL("r1", "tok&en", "shots", "far.png", { assetBase: "assets", annotator: "annotator.html" })).toBe(
       "assets/shots/far.png",
     )
+  })
+
+  test("auto-opens the feedback dock when an item needs input and remembers a manual toggle", () => {
+    const decoded = SCRIPT.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    expect(decoded).toContain("needsDock")
+    expect(decoded).toContain("applyDrawer")
+    expect(decoded).toContain("draft.drawer")
+    expect(decoded).toContain("setDrawer(true, true)")
+    expect(decoded.indexOf("needsDock")).toBeLessThan(decoded.indexOf("applyDrawer"))
   })
 
   test("preview submit skips the live POST after validation and export", () => {

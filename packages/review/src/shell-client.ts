@@ -303,7 +303,43 @@ export const SCRIPT = String.raw`
     if (overall && overall !== document.activeElement) overall.value = draft.text || ""
   }
 
+  const measure = () => {
+    const bar = qs(".bar")
+    const dock = qs(".pane-feedback")
+    if (bar) document.documentElement.style.setProperty("--bar", bar.getBoundingClientRect().height + "px")
+    if (dock) document.documentElement.style.setProperty("--dock", dock.getBoundingClientRect().height + "px")
+  }
+  const needsDock = (item) => {
+    const feedback = item && item.feedback
+    if (!feedback) return false
+    return !!(feedback.verdict || feedback.required || (feedback.checks && feedback.checks.length) || item.annotate)
+  }
+  const setDrawer = (open, manual) => {
+    const pane = qs(".pane-feedback")
+    const handle = qs("[data-drawer]")
+    if (!pane) return
+    pane.classList.toggle("open", !!open)
+    if (handle) handle.setAttribute("aria-expanded", open ? "true" : "false")
+    if (manual) {
+      const item = currentItem()
+      if (item) {
+        draft.drawer = draft.drawer || {}
+        draft.drawer[item.id] = open ? "open" : "closed"
+        save()
+      }
+    }
+    measure()
+  }
+  const applyDrawer = (item) => {
+    if (!item) return
+    const stored = draft.drawer && draft.drawer[item.id]
+    if (stored === "open") setDrawer(true)
+    else if (stored === "closed") setDrawer(false)
+    else setDrawer(needsDock(item))
+  }
+
   const show = (itemID, assetID) => {
+
     const item = byId[itemID] || items[0]
     if (!item) return
     draft.item = item.id
@@ -339,6 +375,7 @@ export const SCRIPT = String.raw`
       })
     }
     if (item.kind === "custom") helloCustom(item)
+    applyDrawer(item)
   }
 
   const setDecision = (decision) => {
@@ -375,9 +412,10 @@ export const SCRIPT = String.raw`
     const left = missing()
     if (left.length) {
       show(left[0].id)
-      const pane = qs(".pane-feedback")
-      if (pane) pane.classList.add("open")
+      setDrawer(true, true)
       showError("还有必填项未给结论：" + left.map((item) => item.title).join("、"))
+      const gap = qs('.item-feedback[data-feedback-for="' + CSS.escape(left[0].id) + '"] [data-verdict]')
+      if (gap && gap.focus) gap.focus()
       return
     }
     const button = qs("[data-submit]")
@@ -468,9 +506,7 @@ export const SCRIPT = String.raw`
     const handle = event.target.closest("[data-drawer]")
     if (handle) {
       const pane = qs(".pane-feedback")
-      const open = pane && !pane.classList.contains("open")
-      if (pane) pane.classList.toggle("open", open)
-      handle.setAttribute("aria-expanded", open ? "true" : "false")
+      setDrawer(pane && !pane.classList.contains("open"), true)
       return
     }
     const decision = event.target.closest("[data-decision]")
@@ -679,12 +715,15 @@ export const SCRIPT = String.raw`
     viewport.addEventListener("scroll", sync)
     sync()
   }
-  const bar = qs(".bar")
-  const measure = () => {
-    if (bar) document.documentElement.style.setProperty("--bar", bar.getBoundingClientRect().height + "px")
-  }
   measure()
   window.addEventListener("resize", measure)
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(measure)
+    const bar = qs(".bar")
+    const dock = qs(".pane-feedback")
+    if (bar) observer.observe(bar)
+    if (dock) observer.observe(dock)
+  }
 
   const start = draft.item && byId[draft.item] ? draft.item : items[0] && items[0].id
   if (start) show(start)

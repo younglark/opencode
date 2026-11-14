@@ -88,8 +88,11 @@ for (const [name, file] of sources) {
     source += "\n" + fs.readFileSync(path.join(dir, "upstream/help.css"), "utf8")
     source += "\n" + fs.readFileSync(path.join(dir, "host/host.css"), "utf8")
   } else {
-    // Host modules may use `export` in comments only; strip ESM exports if present so the script is a classic script.
-    source = source.replace(/^export /gm, "")
+    // Host modules end with test-only ESM re-exports of their global (`export const x = globalThis.Y.x`).
+    // Drop them: as classic scripts sharing one global scope, two modules re-exporting the same name
+    // (map.js and video.js both have frameIndex) would be a redeclaration SyntaxError that kills the script.
+    source = source.replace(/^export const \w+ = globalThis\.\w+\.\w+;?\s*$/gm, "")
+    if (/^export /m.test(source)) throw new Error("Unexpected ESM export in " + file)
     new vm.Script(source, { filename: file })
   }
   html = html.replace("/*__" + name + "__*/", () => source.replace(/<\/script/gi, "<\\/script"))

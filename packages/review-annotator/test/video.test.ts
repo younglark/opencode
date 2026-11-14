@@ -9,6 +9,13 @@ describe("frame math", () => {
     expect(stepTime(0, 30, -1, 10)).toBeCloseTo(0.5 / 30, 10)
   })
 
+  test("maps jittered presented frame start times to their frame", () => {
+    // MediaRecorder WebM: frame 1 at 10 fps presented at 0.099 s, frame 2 at 0.204 s.
+    expect(frameIndex(0.099, 10)).toBe(1)
+    expect(frameIndex(0.204, 10)).toBe(2)
+    expect(stepTime(0.099, 10, 1, 2)).toBeCloseTo(0.25, 10)
+  })
+
   test("clamps a step to the last frame and falls back to 30 fps", () => {
     const last = stepTime(10, 24, 1000, 10)
     expect(last).toBeCloseTo(10 - 1 / 24, 6)

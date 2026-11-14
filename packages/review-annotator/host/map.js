@@ -102,7 +102,9 @@
 
   function frameIndex(timeSec, fps) {
     if (!(fps > 0) || !Number.isFinite(timeSec)) return undefined
-    return Math.max(0, Math.round(timeSec * fps - 0.5))
+    // Accepts both frame-centre times ((i + 0.5) / fps) and presented frame start times, which in
+    // recorded WebM sit slightly before or after i / fps; flooring with a quarter-frame bias maps both to i.
+    return Math.max(0, Math.floor(timeSec * fps + 0.25))
   }
 
   function fromVideoFeedback(feedback, fps) {

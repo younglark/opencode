@@ -9,9 +9,9 @@ Only the web image- and video-annotation sources were copied. Desktop/Qt code, d
 ## Layout
 
 - `upstream/` — copies of `web/src` files, with the patches below.
-- `host/` — new adapter code (not upstream): host API, touch, mapping, touch, mapping, and browser-only video frame step (no ffmpeg).
+- `host/` — new adapter code (not upstream): host API, touch, mapping, and browser-only video frame step (no ffmpeg).
 - `annotator.html` — build output of `build.mjs` (committed so the review page does not need a generate step).
-- `build.mjs` — adapted from `web/build.cjs`: no brand image injection, CSP allows same-origin images, host scripts appended, Required Notice left in an HTML comment.
+- `build.mjs` — adapted from `web/build.cjs`: no brand image injection, CSP allows same-origin images, host scripts appended, Required Notice left in an HTML comment. Host scripts' test-only `export const x = globalThis.Y.x` lines are dropped (as classic scripts, two of them re-exporting `frameIndex` was a redeclaration SyntaxError that stopped `host/video.js` from loading).
 
 ## Patches in `upstream/`
 
@@ -21,6 +21,8 @@ Only the web image- and video-annotation sources were copied. Desktop/Qt code, d
 - `releaseVideo` only revokes `blob:` URLs, so a same-origin review asset URL can be used as `video.src`.
 - `trackFrames` samples `requestVideoFrameCallback` mediaTime deltas to estimate fps when `Asset.fps` is missing (fallback 30).
 - Frame step seeks to the centre of frame `n`, `(n+0.5)/fps`.
+- Frame step finds the current frame with `floor(t*fps + 0.25)`, so a presented frame start time that is a little early (recorded WebM: frame 1 at 0.099 s) does not get stuck on the previous frame.
+- `prepareVideoUrl` / `attachVideoUrl`: when `video.duration` is `Infinity` (MediaRecorder WebM has no duration in its header), seek far ahead and wait for `durationchange` (at most 3 s) to learn the real duration, then seek back to 0, instead of rejecting the file as "视频时长无效".
 - `loadAgentVideo` loads a URL (Range requests come from the video element) and can restore notes onto recaptured frames without storing original video or frame PNGs in the draft.
 
 ### `shell.html`

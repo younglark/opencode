@@ -196,7 +196,9 @@
       return
     }
     if (message.type === TYPE.load) {
-      load(message).catch((error) => post({ type: TYPE.error, message: String(error?.message || error) }))
+      load(message).catch((error) =>
+        post({ type: TYPE.error, item: message.item, asset: message.asset, message: String(error?.message || error) }),
+      )
       return
     }
     if (message.type === TYPE.exportReq) exportNow(message.request)

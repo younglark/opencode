@@ -69,6 +69,32 @@ opencode service set env OPENCODE_REVIEW_SERVERCHAN_KEY <sendkey>
 
 Then in a session: `/review-remote 10m` (or `on` / `off` / `now`). `<leader>v` (ctrl+x v) runs `now`. `now` refuses to send a link if only loopback addresses are available.
 
+## Remote review: what the review branch adds
+
+Code lives in `packages/review` (MIT, like the rest of opencode) and `packages/review-annotator` (EditHere v0.13.0,
+PolyForm Noncommercial 1.0.0, kept in its own package with its LICENSE, NOTICE and UPSTREAM.md; do not move its code
+into other packages). Outside those two, the wiring is thin: the server routes in `packages/server/src/review.ts` and
+the TUI command in `packages/tui/src/feature-plugins/prompt/review-remote.tsx`. Details are in
+[`packages/review/README.md`](packages/review/README.md); in short:
+
+- Idle reviews: `/review-remote <duration>|on|off|now` sends a link after the session sits idle.
+- Agent reviews: the `review_request` tool sends a link mid-task. Each request has up to 50 items:
+  - `image` and `video`: up to 20 assets each; `feedback.annotate` opens the annotator (boxes, arrows and notes; a
+    video mark is tied to a timestamp and frame index, captured in the browser with no ffmpeg).
+  - `diff`: the session's file changes, with a pass/fail and comment per file.
+  - `custom`: an agent-written HTML page shown in a sandboxed iframe (`allow-scripts allow-forms`, opaque origin).
+    Protocol v1 over `postMessage`: the parent sends `opencode-review:hello {v: 1, item, draft}`; the page sends
+    `ready`, `result` (JSON, at most 64 KiB), `verdict`, `text` and `shortcut`, or calls the injected
+    `window.opencodeReview.setResult/setVerdict/setText`.
+  - `feedback` also takes `verdict` (pass/fail) and named `checks`; `wait` is `async` (feedback arrives as a message)
+    or `block` (returned as the tool result, with `timeoutMs` and `onTimeout`).
+- Links: `/api/review/:id?t=<token>`, one-time 32-byte token (only its sha256 is stored), 2 hour expiry, spent on
+  submit. Drafts stay in the phone's `localStorage` until submit.
+- Checks: `bun test` in `packages/review` and `packages/review-annotator`, `bun typecheck` at the root, and the
+  browser smoke test `bun packages/review/script/smoke.ts` (needs a local Chrome; see the package README).
+- Not covered by automated checks: real iOS Safari, Android Chrome and the WeChat / Feishu in-app browsers, and
+  delivery through real webhooks. Test those by hand before relying on them.
+
 ## Upstream GitHub Actions release workflow
 
 Upstream `.github/workflows/release.yml` is the official release pipeline. It will **not** run usefully on this fork as-is:

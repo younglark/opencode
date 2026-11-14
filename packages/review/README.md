@@ -62,7 +62,29 @@ for a while, and writes the reviewer's decision back into the session.
     annotations in original pixels, video frame time and index, diff lines; images as data URLs). It is checked against
     the request and saved to `<data>/review/<id>/feedback/` as `feedback.json` plus the images, then delivered to a
     blocked tool call (`src/waiters.ts`) or prompted into the session with up to 12 images attached.
+- Page states: an invalid, expired, already submitted or already continued link gets its own page (`链接无效`,
+  `链接已过期`, `已经提交过`, `已在电脑端继续`),
+  and a successful submit replaces the shell with `已提交`. Inside the shell, an annotated item shows `正在载入标注器…`
+  until the annotator is ready; if the annotator cannot open the asset (load error or timeout), the item says so,
+  offers `单独打开原文件`, and text feedback and submit still work. The progress count is a polite live region, a
+  submit error is an alert, and the submit button shows `提交中…` (`aria-busy`) while sending; a failed submit keeps the draft.
+- MediaRecorder WebM (no duration in its header) is accepted: the annotator probes the real duration before use, and
+  frame step tolerates the slightly irregular frame times such files have. H.264 MP4 is still the safest choice for
+  iOS Safari.
 - `includePairLink` is reserved and stays off; nothing reads it yet.
+
+## Testing
+
+- `bun test` in this package (and in `packages/review-annotator` for the annotator) covers parsing, assets, the
+  handler, page rendering, the custom bridge and result checks.
+- `bun script/smoke.ts` (from this package, or `bun packages/review/script/smoke.ts` from the repo root) is an
+  end-to-end check in a real headless Chrome (`/usr/bin/google-chrome`, or set `CHROME=`); it is not part of
+  `bun test`. It records a PNG and a WebM in the browser (no ffmpeg), snapshots an image, a video, a diff and a custom
+  page, serves them through `ReviewHandler` on 127.0.0.1, and for a desktop (mouse, 1400×900) and a phone (touch,
+  390×844) viewport draws on the image, steps five video frames and draws on the frame, passes the diff file, presses
+  the custom page's button so its result travels over the bridge, reloads to check the draft, submits with Ctrl+Enter,
+  then checks `feedback.json`, the written-back prompt and its attachments, and that the link is spent. Exit 0 means all
+  checks passed. It does not replace testing on real phones or in in-app browsers (WeChat, Feishu).
 
 Build, versioning, sync-from-upstream, and why this fork must not be auto-upgraded to the official
 release are documented in [`FORK.md`](../../FORK.md) at the repository root.

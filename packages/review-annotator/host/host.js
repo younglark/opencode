@@ -17,6 +17,16 @@
   document.body.classList.add("review-host")
   document.documentElement.classList.add("review-host")
 
+  const applySystemTheme = () => {
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches
+    document.documentElement.dataset.theme = dark ? "dark" : "light"
+  }
+  applySystemTheme()
+  const scheme = window.matchMedia("(prefers-color-scheme: dark)")
+  if (scheme.addEventListener) scheme.addEventListener("change", applySystemTheme)
+  else if (scheme.addListener) scheme.addListener(applySystemTheme)
+
+
   const app = () => globalThis.EditHereWeb
   let current = { item: "", asset: "", src: "", name: "", kind: "image", fps: undefined }
   let lastRevision = -1

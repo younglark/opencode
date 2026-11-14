@@ -73,3 +73,77 @@ body.review-host #frame-next {
   font-size: 20px;
   line-height: 1;
 }
+
+/* Match the approval shell: GitHub-like colors, system scheme, no in-page theme toggle. */
+html.review-host,
+html.review-host[data-theme="light"] {
+  color-scheme: light;
+  --ink: #1f2328;
+  --muted: #57606a;
+  --line: #d1d9e0;
+  --blue: #0969da;
+  --pale: #ddf4ff;
+  --bg: #ffffff;
+  --panel: #f6f8fa;
+  --input: #ffffff;
+  --dot: #d1d9e0;
+  --hover: #f6f8fa;
+  --purple: #0969da;
+  --error: #cf222e;
+  --shadow: 0 1px 0 #d1d9e0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  html.review-host:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #e6edf3;
+    --muted: #9198a1;
+    --line: #3d444d;
+    --blue: #4493f8;
+    --pale: #151b23;
+    --bg: #0d1117;
+    --panel: #151b23;
+    --input: #0d1117;
+    --dot: #3d444d;
+    --hover: #151b23;
+    --purple: #4493f8;
+    --error: #f85149;
+    --shadow: 0 1px 0 #3d444d;
+  }
+}
+html.review-host[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e6edf3;
+  --muted: #9198a1;
+  --line: #3d444d;
+  --blue: #4493f8;
+  --pale: #151b23;
+  --bg: #0d1117;
+  --panel: #151b23;
+  --input: #0d1117;
+  --dot: #3d444d;
+  --hover: #151b23;
+  --purple: #4493f8;
+  --error: #f85149;
+  --shadow: 0 1px 0 #3d444d;
+}
+
+body.review-host #theme-toggle,
+body.review-host .frame-row,
+body.review-host #frame-list {
+  display: none !important;
+}
+
+body.review-host .header,
+body.review-host .tools,
+body.review-host .video-controls,
+body.review-host .status-bar,
+body.review-host .media-bar {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+body.review-host .time {
+  font-variant-numeric: tabular-nums;
+  min-width: 12em;
+}

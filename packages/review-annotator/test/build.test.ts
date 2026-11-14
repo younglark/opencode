@@ -21,4 +21,15 @@ describe("built annotator.html", () => {
   test("loads the video helpers", () => {
     expect(html).toContain("globalThis.ReviewAnnotatorVideo")
   })
+
+  test("hides the video filmstrip and in-page theme toggle, and shows a frame index", () => {
+    expect(html).toContain("body.review-host .frame-row")
+    expect(html).toContain("body.review-host #theme-toggle")
+    expect(html).toContain("display: none !important")
+    expect(html).toContain("第 ")
+    expect(html).toContain(" 帧")
+    expect(html).toContain("prefers-color-scheme: dark")
+    expect(html).toContain("#0d1117")
+    expect(html).toContain("#0969da")
+  })
 })

@@ -21,6 +21,7 @@ Only the web image- and video-annotation sources were copied. Desktop/Qt code, d
 - `releaseVideo` only revokes `blob:` URLs, so a same-origin review asset URL can be used as `video.src`.
 - `trackFrames` samples `requestVideoFrameCallback` mediaTime deltas to estimate fps when `Asset.fps` is missing (fallback 30).
 - Frame step seeks to the centre of frame `n`, `(n+0.5)/fps`.
+- `updateTime` also shows the 1-based frame index next to the clock (`第 n 帧`); the filmstrip (`#frame-list`) is hidden by host CSS, so time, frame and step buttons stay visible without a strip.
 - Frame step finds the current frame with `floor(t*fps + 0.25)`, so a presented frame start time that is a little early (recorded WebM: frame 1 at 0.099 s) does not get stuck on the previous frame.
 - `prepareVideoUrl` / `attachVideoUrl`: when `video.duration` is `Infinity` (MediaRecorder WebM has no duration in its header), seek far ahead and wait for `durationchange` (at most 3 s) to learn the real duration, then seek back to 0, instead of rejecting the file as "视频时长无效".
 - `loadAgentVideo` loads a URL (Range requests come from the video element) and can restore notes onto recaptured frames without storing original video or frame PNGs in the draft.
@@ -37,4 +38,4 @@ Only the web image- and video-annotation sources were copied. Desktop/Qt code, d
 
 - Two sentences that named the EditHere desktop app or told the user to “read EditHere feedback” were rewritten so the help text matches this host.
 
-No patches to `feedback.js`, `layout.js`, `detector.js`, `image-format.js`, `bundle.js`, `ui.js`, `style.css`, or `help.css`. The “explode” / layout tools remain in the source but are hidden by `host/host.css`.
+No patches to `feedback.js`, `layout.js`, `detector.js`, `image-format.js`, `bundle.js`, `ui.js`, `style.css`, or `help.css`. The “explode” / layout tools remain in the source but are hidden by `host/host.css`. Host CSS remaps colors to the approval shell's GitHub-like palette and follows `prefers-color-scheme`; the in-page theme toggle and video filmstrip are hidden, leaving time, frame index and step buttons.

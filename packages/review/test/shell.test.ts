@@ -76,6 +76,7 @@ describe("draft", () => {
       asset: { shots: "near" },
       seen: { shots: true },
       drawer: { shots: "open" },
+      rail: "closed",
       items: { shots: { answers: { verdict: "fail", comment: "阴影反了" } } },
     }
     expect(ReviewShell.parse(JSON.stringify(draft))).toEqual(draft)

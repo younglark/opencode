@@ -62,6 +62,8 @@ details.more{margin-top:6px}details.more>summary{color:var(--accent);font-size:1
 label.comment{display:block;margin:8px 0 0;font-size:12px;color:var(--muted)}
 textarea{width:100%;min-height:72px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);margin-top:4px;resize:vertical}
 .overall-text{min-height:44px}
+.overall-wrap[hidden]{display:none}
+.item-index,.rail-toggle{display:none}
 .state{border-left:4px solid var(--accent);max-width:860px;margin:16px auto;padding:16px}.state.ok{border-left-color:var(--ok)}.state.warn{border-left-color:var(--warn)}.state.bad{border-left-color:var(--bad)}
 #shell{display:flex;flex-direction:column;height:100dvh;min-height:100dvh;padding-bottom:calc(var(--bar) + var(--dock) + var(--vv) + var(--safe))}
 .top{padding:8px 12px 6px;border-bottom:1px solid var(--line);background:var(--bg);position:sticky;top:0;z-index:3}
@@ -122,20 +124,41 @@ noscript{display:block;padding:8px 12px;color:var(--warn)}
   .pane-feedback{position:fixed;left:0;right:0;bottom:calc(var(--bar) + var(--vv));z-index:3;padding:0 12px 8px}
   .pane-feedback:not(.open) .feedback-body{display:none}
   .pane-feedback.open .feedback-body{max-height:min(42dvh,28rem)}
+  .rail-toggle,.item-index{display:none}
 }
 @media (min-width:640px){.files{flex-direction:row;flex-wrap:wrap}.files a{flex:1 1 240px}}
 @media (min-width:900px){
   #shell{display:grid;grid-template-columns:220px minmax(0,1fr) 280px;grid-template-rows:auto auto 1fr auto;height:100dvh;padding-bottom:0}
-  .top{grid-column:1/-1;position:static;padding:10px 16px 8px}
+  #shell.rail-collapsed{grid-template-columns:44px minmax(0,1fr) 280px}
+  #shell:not(.form-open){grid-template-columns:220px minmax(0,1fr) 44px}
+  #shell.rail-collapsed:not(.form-open){grid-template-columns:44px minmax(0,1fr) 44px}
+  .top{grid-column:1/-1;position:static;padding:6px 16px 4px}
+  .top h1{font-size:.95rem;margin:0}
+  .top-row{align-items:center;gap:12px}
+  .top .muted{font-size:11px}
+  .counter{padding-top:0}
+  .wait{margin:3px 0 0;padding:3px 8px;font-size:12px;line-height:1.35}
   .context-panel{grid-column:1;grid-row:2;margin:8px;max-height:28vh;overflow:auto}
+  #shell.rail-collapsed .context-panel{display:none}
   .workspace{display:contents}
   .items{grid-column:1;grid-row:3;flex-direction:column;border:0;padding:8px;overflow:auto}
   .items button{max-width:none;width:100%}
+  .item-index{display:inline;font-size:11px;color:var(--muted);margin-right:6px}
+  .rail-toggle{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:100%;min-height:44px;margin:0 0 6px;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--muted);font-size:18px;line-height:1}
+  #shell.rail-collapsed .items{padding:4px 0;gap:4px}
+  #shell.rail-collapsed .rail-toggle{margin:0 0 4px;border-radius:0;border-left:0;border-right:0}
+  #shell.rail-collapsed .items button{align-items:center;padding:8px 0;border-radius:0;border-right:0;max-width:none}
+  #shell.rail-collapsed .item-title,#shell.rail-collapsed .item-status{display:none}
+  #shell.rail-collapsed .item-index{display:block;margin:0;font-size:13px;font-weight:600;color:inherit}
   .stage{grid-column:2;grid-row:2/4;overflow:auto;padding:12px 16px}
   .step{display:none}
-  .pane-feedback{grid-column:3;grid-row:2/4;border:0;border-left:1px solid var(--line);overflow:auto;padding:12px 16px;position:static}
-  .drawer-handle{display:none}
-  .feedback-body{display:block;max-height:none}
+  .pane-feedback{grid-column:3;grid-row:2/4;border:0;border-left:1px solid var(--line);overflow:auto;padding:8px 12px 12px;position:static;display:flex;flex-direction:column;min-width:0}
+  .drawer-handle{display:flex;flex-shrink:0;width:100%;min-height:44px}
+  .drawer-handle::before{display:none}
+  .feedback-body{display:block;max-height:none;flex:1}
+  #shell:not(.form-open) .pane-feedback{padding:0;overflow:hidden}
+  #shell:not(.form-open) .feedback-body{display:none}
+  #shell:not(.form-open) .drawer-handle{writing-mode:vertical-rl;justify-content:flex-start;align-items:center;height:100%;padding:12px 0;letter-spacing:.12em}
   .bar{position:static;grid-column:1/-1;grid-row:4;padding:8px 16px}
   .shortcut-hint{display:block}
   body{font-size:16px;line-height:1.5}
@@ -362,8 +385,8 @@ export function approval(input: {
       : ""
   const nav = items
     .map(
-      (item) =>
-        `<button type="button" data-go="${escape(item.id)}" data-status="unread"><span class="item-title">${escape(item.title)}</span><span class="item-status">未看</span></button>`,
+      (item, index) =>
+        `<button type="button" data-go="${escape(item.id)}" data-status="unread" title="${escape(item.title)}"><span class="item-index">${index + 1}</span><span class="item-title">${escape(item.title)}</span><span class="item-status">未看</span></button>`,
     )
     .join("")
   const panes = items.map((item) => itemPane(review, input.token, item, input.diffs, input.diffError, preview)).join("\n")
@@ -373,7 +396,7 @@ export function approval(input: {
 ${contextHTML(review, input.context)}
 <noscript><style>.item-pane[hidden],.item-feedback[hidden],.asset-pane[hidden]{display:block!important}</style>请启用 JavaScript 后再提交审查。下面的内容和改动仍可查看。</noscript>
 <div class="workspace">
-<nav class="items" aria-label="审查项">${nav}</nav>
+<nav class="items" aria-label="审查项"><button type="button" class="rail-toggle" data-rail aria-expanded="true" title="收起审查项列表" aria-label="收起审查项列表">‹</button>${nav}</nav>
 <div class="stage">
 <button type="button" class="step prev" data-step="-1" aria-label="上一项">‹</button>
 <button type="button" class="step next" data-step="1" aria-label="下一项">›</button>
@@ -391,7 +414,7 @@ ${panes}
 <button type="button" data-decision="changes" aria-pressed="false">需要修改</button>
 <button type="button" data-decision="stop" aria-pressed="false">先停下</button>
 </div>
-<label class="comment">总体意见（可选；选“需要修改”时请填写）<textarea class="overall-text" data-overall placeholder="写给 agent 的总体意见。对各文件和各项的意见写在对应位置，会一并提交。"></textarea></label>
+<label class="comment overall-wrap" data-overall-wrap hidden>总体意见（选“需要修改”时请填写）<textarea class="overall-text" data-overall placeholder="写给 agent 的总体意见。对各文件和各项的意见写在对应位置，会一并提交。"></textarea></label>
 <div class="submit-row"><span class="count" data-progress role="status" aria-live="polite">已完成 0/${items.length}</span><button type="button" data-submit>提交全部</button></div>
 <p class="error" data-error role="alert" hidden></p>
 </footer>

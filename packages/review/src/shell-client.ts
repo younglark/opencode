@@ -370,9 +370,12 @@ export const SCRIPT = String.raw`
     const count = qs("[data-progress]")
     if (count) count.textContent = "已完成 " + completed() + "/" + items.length
     qsa("[data-decision]").forEach((button) => pressed(button, button.getAttribute("data-decision") === draft.decision))
+    const wrap = qs("[data-overall-wrap]")
+    if (wrap) wrap.hidden = draft.decision !== "changes"
     const overall = qs("[data-overall]")
     if (overall && overall !== document.activeElement) overall.value = draft.text || ""
     syncHint()
+    measure()
   }
 
   const measure = () => {
@@ -390,6 +393,7 @@ export const SCRIPT = String.raw`
     const handle = qs("[data-drawer]")
     if (!pane) return
     pane.classList.toggle("open", !!open)
+    root.classList.toggle("form-open", !!open)
     if (handle) handle.setAttribute("aria-expanded", open ? "true" : "false")
     if (manual) {
       const item = currentItem()
@@ -401,6 +405,22 @@ export const SCRIPT = String.raw`
     }
     measure()
   }
+  const setRail = (collapsed, manual) => {
+    root.classList.toggle("rail-collapsed", !!collapsed)
+    const toggle = qs("[data-rail]")
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true")
+      const label = collapsed ? "展开审查项列表" : "收起审查项列表"
+      toggle.setAttribute("aria-label", label)
+      toggle.title = label
+      toggle.textContent = collapsed ? "›" : "‹"
+    }
+    if (manual) {
+      draft.rail = collapsed ? "closed" : "open"
+      save()
+    }
+  }
+  const applyRail = () => setRail(draft.rail === "closed")
   const applyDrawer = (item) => {
     if (!item) return
     const stored = draft.drawer && draft.drawer[item.id]
@@ -579,6 +599,11 @@ export const SCRIPT = String.raw`
     if (step) {
       const index = items.findIndex((item) => item.id === currentItem().id) + Number(step.getAttribute("data-step"))
       if (items[index]) show(items[index].id)
+      return
+    }
+    const rail = event.target.closest("[data-rail]")
+    if (rail) {
+      setRail(!root.classList.contains("rail-collapsed"), true)
       return
     }
     const handle = event.target.closest("[data-drawer]")
@@ -791,6 +816,7 @@ export const SCRIPT = String.raw`
     if (dock) observer.observe(dock)
   }
 
+  applyRail()
   const start = draft.item && byId[draft.item] ? draft.item : items[0] && items[0].id
   if (start) show(start)
   else syncNav()

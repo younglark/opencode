@@ -48,6 +48,8 @@ export interface Draft {
   items?: { [id: string]: ItemDraft }
   /** Manual feedback-drawer toggle, remembered per item. */
   drawer?: { [item: string]: "open" | "closed" }
+  /** Desktop item-list rail: collapsed to a narrow index strip, or expanded. */
+  rail?: "open" | "closed"
 }
 
 /** Slim view of a stored item, enough to drive the shell and to build a submission. */

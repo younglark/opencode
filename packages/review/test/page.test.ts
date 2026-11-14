@@ -139,6 +139,17 @@ describe("approval page", () => {
     expect(page).toMatch(/\[data-submit\][^}]*min-height:44px/)
     expect(page).not.toContain("disabled>提交全部")
     expect(page).not.toContain("swipe")
+    expect(page).toContain('data-rail')
+    expect(page).toContain("item-index")
+    expect(page).toContain("rail-collapsed")
+    expect(page).toContain("form-open")
+    expect(page).toContain("data-overall-wrap")
+    expect(page).toContain(".overall-wrap[hidden]{display:none}")
+    expect(page).toContain("#shell.rail-collapsed")
+    expect(page).toContain("#shell:not(.form-open)")
+    expect(page).toContain("@media (max-width:899px)")
+    expect(page).toContain(".pane-feedback:not(.open) .feedback-body{display:none}")
+    expect(page).not.toContain(".drawer-handle{display:none}")
   })
 
   test("keeps a short patch visible without 显示全部", () => {
@@ -397,6 +408,19 @@ describe("approval shell", () => {
     expect(decoded).toContain("draft.drawer")
     expect(decoded).toContain("setDrawer(true, true)")
     expect(decoded.indexOf("needsDock")).toBeLessThan(decoded.indexOf("applyDrawer"))
+    expect(decoded).toContain('root.classList.toggle("form-open"')
+  })
+
+  test("collapses the desktop item rail and overall comment, reusing the drawer draft", () => {
+    const decoded = SCRIPT.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    expect(decoded).toContain("setRail")
+    expect(decoded).toContain("applyRail")
+    expect(decoded).toContain("draft.rail")
+    expect(decoded).toContain("rail-collapsed")
+    expect(decoded).toContain('wrap.hidden = draft.decision !== "changes"')
+    expect(decoded).toContain("[data-overall-wrap]")
+    expect(decoded).toContain("[data-rail]")
+    expect(decoded.indexOf("applyRail()")).toBeLessThan(decoded.indexOf("if (start) show(start)"))
   })
 
   test("preview submit skips the live POST after validation and export", () => {

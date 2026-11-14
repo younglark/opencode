@@ -6,7 +6,7 @@
  *
  * It snapshots an image, a video, a diff and a custom page into a temp dir, serves the review through
  * ReviewHandler on 127.0.0.1, then drives Chrome over the DevTools protocol: draws a box on the image, steps a
- * video frame and draws on it, answers the custom page through its bridge, sets verdicts with the keyboard,
+ * video frame and draws on it, answers the custom page through its bridge, sets form answers with the keyboard,
  * reloads to check the draft survives, submits with Ctrl+Enter, and checks feedback.json and the written-back
  * prompt. The video is recorded in the browser (canvas + MediaRecorder), so no ffmpeg is needed.
  * Not part of `bun test`: it needs Chrome. Exit code 0 means every check passed.
@@ -218,10 +218,10 @@ addEventListener("opencode-review:hello", (e) => {
         directory: work,
         bundle,
         items: [
-          { id: "shot", kind: "image", title: "截图", feedback: { annotate: true, verdict: true }, assets: [{ id: "s", path: "shot.png" }] },
-          { id: "clip", kind: "video", title: "动画", feedback: { annotate: true, verdict: true }, assets: [{ id: "c", path: "clip.webm", fps: 10 }] },
-          { id: "diff", kind: "diff", title: "代码改动", feedback: { verdict: true }, diff: { source: "session" } },
-          { id: "ui", kind: "custom", title: "设置页", feedback: { required: true }, custom: { entry: "page/index.html", files: ["style.css"] } },
+          { id: "shot", kind: "image", title: "截图", feedback: { annotate: true, form: [{ id: "verdict", type: "choice", label: "结论", required: true, options: [{ id: "pass", label: "通过" }, { id: "fail", label: "不通过" }] }] }, assets: [{ id: "s", path: "shot.png" }] },
+          { id: "clip", kind: "video", title: "动画", feedback: { annotate: true, form: [{ id: "verdict", type: "choice", label: "结论", required: true, options: [{ id: "pass", label: "通过" }, { id: "fail", label: "不通过" }] }] }, assets: [{ id: "c", path: "clip.webm", fps: 10 }] },
+          { id: "diff", kind: "diff", title: "代码改动", feedback: { form: [{ id: "verdict", type: "choice", label: "结论", required: true, options: [{ id: "pass", label: "通过" }, { id: "fail", label: "不通过" }] }] }, diff: { source: "session" } },
+          { id: "ui", kind: "custom", title: "设置页", custom: { entry: "page/index.html", files: ["style.css"] } },
         ],
       }),
     )
@@ -330,7 +330,7 @@ addEventListener("opencode-review:hello", (e) => {
 
     // Diff
     await page.key("j", { code: "KeyJ", text: "j" })
-    await page.eval(`document.querySelector('[data-verdict="pass"][data-asset="src/a.ts"]').click()`)
+    await page.eval(`document.querySelector('[data-form-option][data-item="diff"][data-option="pass"]').click()`)
 
     // Custom page: press its own button inside the sandbox.
     await page.key("j", { code: "KeyJ", text: "j" })
@@ -360,9 +360,9 @@ addEventListener("opencode-review:hello", (e) => {
     const feedback = JSON.parse(await fs.readFile(path.join(root, bundle, "feedback", "feedback.json"), "utf8").catch(() => "{}"))
     const byId = Object.fromEntries((feedback.items ?? []).map((item: any) => [item.id, item]))
     check(`${label}: decision changes`, feedback.decision === "changes", feedback.decision)
-    check(`${label}: image pass with one box`, byId.shot?.verdict === "pass" && byId.shot?.assets?.[0]?.annotations?.length === 1, byId.shot)
-    check(`${label}: video fail with a frame mark and a frame PNG`, byId.clip?.verdict === "fail" && byId.clip?.assets?.[0]?.annotations?.[0]?.frame?.index === 5 && byId.clip?.assets?.[0]?.files?.length === 1, byId.clip)
-    check(`${label}: diff file pass`, byId.diff?.assets?.[0]?.asset === "src/a.ts" && byId.diff?.assets?.[0]?.verdict === "pass", byId.diff)
+    check(`${label}: image pass with one box`, byId.shot?.answers?.verdict === "pass" && byId.shot?.assets?.[0]?.annotations?.length === 1, byId.shot)
+    check(`${label}: video fail with a frame mark and a frame PNG`, byId.clip?.answers?.verdict === "fail" && byId.clip?.assets?.[0]?.annotations?.[0]?.frame?.index === 5 && byId.clip?.assets?.[0]?.files?.length === 1, byId.clip)
+    check(`${label}: diff form pass`, byId.diff?.answers?.verdict === "pass", byId.diff)
     check(`${label}: custom result`, byId.ui?.custom?.preset === "night" && byId.ui?.verdict === "fail", byId.ui)
     const text = prompts[0]?.text ?? ""
     check(`${label}: written-back prompt`, text.includes("阴影方向反了") && text.includes("(frame 5)") && text.includes('page result: {"preset":"night"'), text)

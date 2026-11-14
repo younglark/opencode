@@ -81,12 +81,13 @@ the TUI command in `packages/tui/src/feature-plugins/prompt/review-remote.tsx`. 
 - Agent reviews: the `review_request` tool sends a link mid-task. Each request has up to 50 items:
   - `image` and `video`: up to 20 assets each; `feedback.annotate` opens the annotator (boxes, arrows and notes; a
     video mark is tied to a timestamp and frame index, captured in the browser with no ffmpeg).
-  - `diff`: the session's file changes, with a pass/fail and comment per file.
+  - `diff`: the session's file changes.
   - `custom`: an agent-written HTML page shown in a sandboxed iframe (`allow-scripts allow-forms`, opaque origin).
     Protocol v1 over `postMessage`: the parent sends `opencode-review:hello {v: 1, item, draft}`; the page sends
     `ready`, `result` (JSON, at most 64 KiB), `verdict`, `text` and `shortcut`, or calls the injected
     `window.opencodeReview.setResult/setVerdict/setText`.
-  - `feedback` also takes `verdict` (pass/fail) and named `checks`; `wait` is `async` (feedback arrives as a message)
+  - `feedback.form` is an agent-defined list of `choice`, `multi`, and `text` fields (optional `when` visibility);
+    `feedback.annotate` still opens the image/video annotator. `wait` is `async` (feedback arrives as a message)
     or `block` (returned as the tool result, with `timeoutMs` and `onTimeout`).
 - Links: `/api/review/:id?t=<token>`, one-time 32-byte token (only its sha256 is stored), 2 hour expiry, spent on
   submit. Drafts stay in the phone's `localStorage` until submit.

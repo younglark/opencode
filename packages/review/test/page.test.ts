@@ -96,13 +96,16 @@ describe("approval page", () => {
     expect(page).toContain("tok\\u0026en")
   })
 
-  test("truncates a long diff behind 显示全部 and offers a per-file comment", () => {
+  test("truncates a long diff behind 显示全部 and renders the idle item's form, not a per-file widget", () => {
     const page = html()
     expect(page).toContain("显示全部")
-    expect(page).toContain('data-asset="b.ts"')
-    expect(page).toContain("对这个文件的意见")
-    expect(page).toContain('data-verdict="pass"')
-    expect(page).toContain('data-verdict="fail"')
+    expect(page).toContain('id="d-diff-1"')
+    expect(page).toContain("b.ts")
+    expect(page).not.toContain("对这个文件的意见")
+    expect(page).toContain('data-form-field="verdict"')
+    expect(page).toContain('data-form-option')
+    expect(page).toContain('data-option="pass"')
+    expect(page).toContain('data-option="fail"')
     expect(page).toContain("提交全部")
   })
 
@@ -162,7 +165,14 @@ describe("approval shell", () => {
         title: "Renders",
         note: "看灯光",
         bundle: "r1",
-        feedback: { annotate: true, verdict: true, required: true, checks: [{ id: "shadow", label: "阴影正确" }] },
+        feedback: {
+          annotate: true,
+          form: [
+            { id: "verdict", type: "choice" as const, label: "结论", required: true, options: [{ id: "pass", label: "通过" }, { id: "fail", label: "不通过" }] },
+            { id: "checks", type: "multi" as const, label: "还需要看", options: [{ id: "shadow", label: "阴影正确" }] },
+            { id: "comment", type: "text" as const, label: "意见", required: true, when: { field: "verdict", equals: "fail" } },
+          ],
+        },
         assets: [
           {
             id: "far",
@@ -178,7 +188,21 @@ describe("approval shell", () => {
         kind: "video" as const,
         title: "Clip",
         bundle: "r1",
-        feedback: { verdict: true },
+        feedback: {
+          form: [
+            {
+              id: "feel",
+              type: "choice" as const,
+              label: "观感",
+              required: true,
+              options: [
+                { id: "smooth", label: "流畅" },
+                { id: "stutter", label: "卡顿" },
+                { id: "again", label: "再看一遍" },
+              ],
+            },
+          ],
+        },
         assets: [{ id: "c", stored: stored("c.mp4", "video/mp4"), fps: 30 }],
       },
       {
@@ -186,7 +210,20 @@ describe("approval shell", () => {
         kind: "diff" as const,
         title: "代码改动",
         bundle: "r1",
-        feedback: { verdict: true, annotate: true },
+        feedback: {
+          form: [
+            {
+              id: "merge",
+              type: "choice" as const,
+              label: "这次改动",
+              required: true,
+              options: [
+                { id: "ok", label: "可以合入" },
+                { id: "rework", label: "需要再改" },
+              ],
+            },
+          ],
+        },
         assets: [],
         diff: { files: ["a.ts"] },
       },
@@ -195,7 +232,7 @@ describe("approval shell", () => {
         kind: "custom" as const,
         title: "设置页",
         bundle: "r1",
-        feedback: { required: true },
+        feedback: { form: [{ id: "note", type: "text" as const, label: "补充说明", placeholder: "可选" }] },
         assets: [],
         custom: { entry: "index.html", files: [] },
       },
@@ -241,7 +278,7 @@ describe("approval shell", () => {
             kind: "video" as const,
             title: "Clip",
             bundle: "r1",
-            feedback: { annotate: true, verdict: true },
+            feedback: { annotate: true, form: [{ id: "verdict", type: "choice" as const, label: "结论", required: true, options: [{ id: "pass", label: "通过" }, { id: "fail", label: "不通过" }] }] },
             assets: [{ id: "c", stored: stored("c.mp4", "video/mp4"), fps: 24 }],
           },
           {
@@ -249,7 +286,7 @@ describe("approval shell", () => {
             kind: "video" as const,
             title: "Plain",
             bundle: "r1",
-            feedback: { verdict: true },
+            feedback: { form: [{ id: "verdict", type: "choice" as const, label: "结论", options: [{ id: "pass", label: "通过" }, { id: "fail", label: "不通过" }] }] },
             assets: [{ id: "p", stored: stored("p.mp4", "video/mp4") }],
           },
         ],
@@ -283,17 +320,24 @@ describe("approval shell", () => {
     expect(page).toContain("aria-busy")
   })
 
-  test("migrates the diff with per-file verdicts and honors a file filter", () => {
+  test("honors a diff file filter and has no per-file pass/fail widget", () => {
     expect(page).toContain('id="d-diff-0"')
-    expect(page).toContain('data-asset="a.ts"')
-    expect(page).not.toContain('data-asset="b.ts"')
-    expect(page).toContain("对这个文件的意见")
+    expect(page).toContain("a.ts")
+    expect(page).not.toContain('id="d-diff-1"')
+    expect(page).not.toContain('href="#d-diff-1"')
+    expect(page).not.toContain("对这个文件的意见")
+    expect(page).toContain('data-form-field="merge"')
+    expect(page).toContain("可以合入")
   })
 
-  test("shows pass/fail, checkpoints, a sandboxed custom page, and the JSON submit", () => {
+  test("renders agent-defined forms, a sandboxed custom page, and the JSON submit", () => {
     expect(page).toContain("阴影正确")
-    expect(page).toContain('data-check="shadow"')
-    expect(page).toContain("本项结论")
+    expect(page).toContain('data-form-field="checks"')
+    expect(page).toContain('data-form-field="comment"')
+    expect(page).toContain('data-form-field="feel"')
+    expect(page).toContain("补充说明")
+    expect(page).not.toContain("本项结论")
+    expect(page).not.toContain('data-check="shadow"')
     expect(page).toContain('sandbox="allow-scripts allow-forms"')
     expect(page).toContain('data-custom')
     expect(page).toContain("opencode-review:hello")
@@ -360,7 +404,10 @@ describe("approval shell", () => {
     expect(decoded).toContain("if (data.preview)")
     expect(decoded.indexOf("if (data.preview)")).toBeLessThan(decoded.indexOf("fetch(data.submit"))
     expect(decoded).toContain("paint(draft.decision)")
-    expect(decoded).toContain("还有必填项未给结论")
+    expect(decoded).toContain("还有必填项未填写")
+    expect(decoded).toContain("passFailField")
+    expect(decoded).toContain("HINT_PF")
+    expect(decoded).toContain("setPassFail")
   })
 })
 

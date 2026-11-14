@@ -224,7 +224,6 @@ describe("agent reviews", async () => {
         assets: [
           {
             asset: "far",
-            verdict: "fail",
             annotations: [{ n: 1, shape: "rect", rect: { x1: 1, y1: 2, x2: 30, y2: 40 }, text: "阴影反了" }],
             files: ["shots-far.png"],
           },
@@ -275,7 +274,7 @@ describe("agent reviews", async () => {
     expect(h.prompts[0].files?.map((file) => file.name)).toEqual(["shots-far.png"])
     expect(await fs.readFile(h.prompts[0].files![0].path, "utf8")).toBe("annotated")
     const saved = JSON.parse(await fs.readFile(path.join(root, h.id, "feedback", "feedback.json"), "utf8"))
-    expect(saved.items[0].assets[0].verdict).toBe("fail")
+    expect(saved.items[0].assets[0].annotations).toHaveLength(1)
     const again = await run(h.handler.submitJSON(h.id, { t: h.token, result }))
     expect(again.status).toBe(409)
   })

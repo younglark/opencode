@@ -15,9 +15,9 @@ export const DESCRIPTION = `Ask the user to review your work on their phone or a
 Items (each answered on its own, all submitted at once):
 - image: assets[] of 1-20 images (png, jpg, webp, gif, avif); optional compare image per asset.
 - video: assets[] of 1-20 videos. Prefer H.264 MP4 (faststart) so every phone plays it; set fps for frame stepping. The user can mark a frame and draw on it.
-- diff: the session's code changes, judged per file; diff.files limits it to some files.
+- diff: the session's code changes; diff.files limits it to some files.
 - custom: an HTML page you wrote (custom.entry plus custom.files it loads), shown in a sandboxed iframe; use it for anything interactive. A small injected bridge exposes window.opencodeReview.setResult(json), setVerdict("pass"|"fail") and setText(s). You can also postMessage { type: "opencode-review:result"|"verdict"|"text", v: 1, ... } to the parent. The shell sends { type: "opencode-review:hello", v: 1, item, draft } so a refresh can restore state. J/K, P/F and Ctrl/⌘+Enter are reserved by the shell when focus is not in a field.
-Per item, feedback picks what the user gives: annotate (points/boxes per asset, line comments for diff), verdict (pass/fail per asset), checks (named pass/fail checkpoints); required forces a verdict.
+Per item, feedback is yours to define. feedback.annotate lets the user draw points/boxes on image or video assets. feedback.form is an array of fields the approval page renders: { id, type: "choice"|"multi"|"text", label, required?, options?, placeholder?, when? }. There is no built-in pass/fail, checklist, or comment — send a choice, multi, or text field if you want one. A field with when: { field, equals } is shown (and required) only when that other field has a listed value. Answers come back as items[].answers keyed by field id.
 Paths are relative to the working directory and are copied when you call, so later edits do not change what is reviewed. Limits: 50 items, 20 assets per item, image 30 MB, video 300 MB, 1 GB per review.
 
 Waiting is your decision:

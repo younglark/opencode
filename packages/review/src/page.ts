@@ -3,6 +3,7 @@ export * as ReviewPage from "./page.js"
 import type { ReviewContext } from "./context.js"
 import type { ReviewDecide } from "./decide.js"
 import { ReviewAnnotator } from "./annotator.js"
+import { ReviewForm } from "./form.js"
 import { ReviewRequest } from "./request.js"
 import { SCRIPT } from "./shell-client.js"
 import { ReviewShell } from "./shell.js"
@@ -96,15 +97,14 @@ figcaption{font-size:12px;color:var(--muted);margin-top:4px;word-break:break-all
 .drawer-handle{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:44px;border:0;background:none;color:var(--muted);font-size:13px}
 .drawer-handle::before{content:"";width:36px;height:4px;border-radius:2px;background:var(--line)}
 .feedback-body{overflow:auto}
-.verdict{display:flex;gap:8px;margin:8px 0}
-.verdict button,.check button,.choices button{flex:1;min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
-.verdict button[aria-pressed="true"][data-verdict="pass"],.check button[aria-pressed="true"][data-verdict="pass"]{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--bg));color:var(--ok)}
-.verdict button[aria-pressed="true"][data-verdict="fail"],.check button[aria-pressed="true"][data-verdict="fail"]{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 16%,var(--bg));color:var(--bad)}
-.checks{display:flex;flex-direction:column;gap:8px;margin:8px 0}
-.check{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
-.check .check-label{flex:1 1 140px;font-size:13px}
-.check .verdict{flex:1 1 180px;margin:0}
-.file-review{margin-top:8px}
+.form-field{margin:8px 0}.form-field[hidden]{display:none}
+.form-label{font-size:13px;color:var(--muted);margin:0 0 4px}
+.form-label .req,.comment .req{color:var(--bad)}
+.form-options{display:flex;flex-wrap:wrap;gap:8px}
+.form-options button,.choices button{flex:1;min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.form-options button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}
+.form-options button[aria-pressed="true"][data-option="pass"]{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--bg));color:var(--ok)}
+.form-options button[aria-pressed="true"][data-option="fail"]{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 16%,var(--bg));color:var(--bad)}
 .bar{position:fixed;left:0;right:0;bottom:var(--vv);z-index:4;background:var(--bg);border-top:1px solid var(--line);padding:8px 12px calc(8px + var(--safe))}
 .choices{display:flex;gap:6px;flex-wrap:wrap}
 .choices button{flex:1 1 30%;font-size:13px}
@@ -186,16 +186,6 @@ export function info(item: ReviewRequest.StoredItem, diffs: ReadonlyArray<FileDi
   }
 }
 
-function fileReview(itemID: string, file: string) {
-  return `<div class="file-review">
-<div class="verdict" role="group" aria-label="对 ${escape(file)} 的结论">
-<button type="button" data-verdict="pass" data-scope="asset" data-item="${escape(itemID)}" data-asset="${escape(file)}">通过</button>
-<button type="button" data-verdict="fail" data-scope="asset" data-item="${escape(itemID)}" data-asset="${escape(file)}">不通过</button>
-</div>
-<label class="comment">对这个文件的意见（可选）<textarea data-scope="asset-text" data-item="${escape(itemID)}" data-asset="${escape(file)}" placeholder="只针对 ${escape(file)} 的意见，会和总体意见一起提交"></textarea></label>
-</div>`
-}
-
 export function diffHTML(diffs: ReadonlyArray<FileDiff>, itemID = "diff") {
   if (diffs.length === 0) return `<p class="muted">本轮没有文件改动。</p>`
   let budget = TOTAL_LIMIT
@@ -212,7 +202,7 @@ export function diffHTML(diffs: ReadonlyArray<FileDiff>, itemID = "diff") {
     const patch = diff.patch.slice(0, Math.max(0, Math.min(PATCH_LIMIT, budget)))
     budget -= patch.length
     const open = diffs.length === 1 ? " open" : ""
-    return `<details class="file" id="d-${escape(itemID)}-${index}"${open}><summary>${escape(diff.file)} <span class="add">+${diff.additions}</span> <span class="del">-${diff.deletions}</span> <span class="muted">${escape(diff.status)}</span></summary>${patchBlock(patch, clipped)}${fileReview(itemID, diff.file)}</details>`
+    return `<details class="file" id="d-${escape(itemID)}-${index}"${open}><summary>${escape(diff.file)} <span class="add">+${diff.additions}</span> <span class="del">-${diff.deletions}</span> <span class="muted">${escape(diff.status)}</span></summary>${patchBlock(patch, clipped)}</details>`
   })
   return `<p class="muted">${diffs.length} 个文件 <span class="add">+${additions}</span> <span class="del">-${deletions}</span></p><nav class="files" aria-label="文件列表">${toc}</nav>${files.join("")}`
 }
@@ -309,45 +299,31 @@ function itemPane(
   return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}${switcher}<div class="viewer">${frame}${assets}</div></section>`
 }
 
-function verdictButtons(scope: "item" | "asset", itemID: string, asset?: string) {
-  const extra = asset
-    ? ` data-item="${escape(itemID)}" data-asset="${escape(asset)}"`
-    : ` data-item="${escape(itemID)}"`
-  return `<div class="verdict" role="group" aria-label="结论">
-<button type="button" data-verdict="pass" data-scope="${scope}"${extra}>通过</button>
-<button type="button" data-verdict="fail" data-scope="${scope}"${extra}>不通过</button>
+function formFieldHTML(itemID: string, field: ReviewForm.Field) {
+  const req = field.required ? ` <span class="req" aria-hidden="true">*</span>` : ""
+  const labelID = `fl-${itemID}-${field.id}`
+  if (field.type === "text") {
+    const placeholder = field.placeholder ? ` placeholder="${escape(field.placeholder)}"` : ""
+    return `<div class="form-field" data-form-field="${escape(field.id)}" data-type="text">
+<label class="comment" for="${escape(labelID)}">${escape(field.label)}${req}<textarea id="${escape(labelID)}" data-form-text data-item="${escape(itemID)}" data-field="${escape(field.id)}"${placeholder}></textarea></label>
+</div>`
+  }
+  const options = (field.options ?? [])
+    .map(
+      (option) =>
+        `<button type="button" data-form-option data-item="${escape(itemID)}" data-field="${escape(field.id)}" data-option="${escape(option.id)}" aria-pressed="false">${escape(option.label)}</button>`,
+    )
+    .join("")
+  return `<div class="form-field" data-form-field="${escape(field.id)}" data-type="${escape(field.type)}">
+<div class="form-label" id="${escape(labelID)}">${escape(field.label)}${req}</div>
+<div class="form-options" role="group" aria-labelledby="${escape(labelID)}">${options}</div>
 </div>`
 }
 
-function itemFeedback(item: ReviewRequest.StoredItem, files: ReadonlyArray<FileDiff>) {
-  const feedback = item.feedback
-  const perAsset = Boolean(feedback?.verdict && (item.kind === "diff" ? files.length > 0 : item.assets.length > 0))
-  const itemLevel = Boolean(feedback?.required || (feedback?.verdict && !perAsset))
-  const checks = feedback?.checks ?? []
-  const assetBox =
-    perAsset && item.kind !== "diff"
-      ? `<div data-asset-feedback>
-<p class="muted">本${item.kind === "video" ? "段视频" : "张图"}：<span data-current-asset></span></p>
-${verdictButtons("asset", item.id)}
-<label class="comment">意见（可选）<textarea data-scope="asset-text" data-item="${escape(item.id)}"></textarea></label>
-</div>`
-      : ""
-  const itemBox = itemLevel ? `<div><p class="muted">本项结论</p>${verdictButtons("item", item.id)}</div>` : ""
-  const checkBox =
-    checks.length > 0
-      ? `<div class="checks">${checks
-          .map(
-            (check) =>
-              `<div class="check"><span class="check-label">${escape(check.label)}</span><div class="verdict" role="group" aria-label="${escape(check.label)}">
-<button type="button" data-verdict="pass" data-scope="check" data-item="${escape(item.id)}" data-check="${escape(check.id)}">通过</button>
-<button type="button" data-verdict="fail" data-scope="check" data-item="${escape(item.id)}" data-check="${escape(check.id)}">不通过</button>
-</div></div>`,
-          )
-          .join("")}</div>`
-      : ""
+function itemFeedback(item: ReviewRequest.StoredItem) {
+  const fields = (item.feedback?.form ?? []).map((field) => formFieldHTML(item.id, field)).join("")
   return `<div class="item-feedback" data-feedback-for="${escape(item.id)}" hidden>
-${assetBox}${itemBox}${checkBox}
-<label class="comment">对本项的意见（可选）<textarea data-scope="item-text" data-item="${escape(item.id)}"></textarea></label>
+${fields}
 </div>`
 }
 
@@ -391,7 +367,7 @@ export function approval(input: {
     )
     .join("")
   const panes = items.map((item) => itemPane(review, input.token, item, input.diffs, input.diffError, preview)).join("\n")
-  const feedback = items.map((item) => itemFeedback(item, diffsFor(item, input.diffs))).join("\n")
+  const feedback = items.map((item) => itemFeedback(item)).join("\n")
   const body = `<div id="shell">
 <header class="top"><div class="top-row"><div><h1>${escape(review.title)}</h1><div class="muted">${escape(review.directory)} · 有效期至 ${escape(new Date(review.expiresAt).toLocaleString("zh-CN", { hour12: false }))}</div></div><div class="counter" data-counter>第 1/${items.length} 项</div></div>${preview ? `<p class="wait" data-preview-banner role="status">这是静态预览，提交不会写回会话</p>` : ""}${wait}</header>
 ${contextHTML(review, input.context)}
@@ -409,7 +385,7 @@ ${panes}
 </aside>
 </div>
 <footer class="bar">
-<p class="shortcut-hint" data-shortcut-hint>J / K 切换项 · P / F 通过或不通过 · Ctrl / ⌘ + Enter 提交</p>
+<p class="shortcut-hint" data-shortcut-hint>J / K 切换项 · Ctrl / ⌘ + Enter 提交</p>
 <div class="choices" role="group" aria-label="总体结论">
 <button type="button" data-decision="continue" aria-pressed="true">没问题，继续</button>
 <button type="button" data-decision="changes" aria-pressed="false">需要修改</button>

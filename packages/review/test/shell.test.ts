@@ -1,25 +1,59 @@
 import { describe, expect, test } from "bun:test"
+import { ReviewForm } from "../src/form.js"
 import { ReviewShell } from "../src/shell.js"
 
 const shots: ReviewShell.ItemInfo = {
   id: "shots",
   kind: "image",
   title: "Renders",
-  feedback: { verdict: true, required: true, checks: [{ id: "shadow", label: "阴影正确" }] },
+  feedback: {
+    form: [
+      ReviewForm.verdictChoice(),
+      {
+        id: "checks",
+        type: "multi",
+        label: "还需要看",
+        options: [{ id: "shadow", label: "阴影正确" }],
+      },
+      {
+        id: "comment",
+        type: "text",
+        label: "意见",
+        required: true,
+        when: { field: "verdict", equals: "fail" },
+      },
+    ],
+  },
   assetIDs: ["far", "near"],
 }
 const clip: ReviewShell.ItemInfo = {
   id: "clip",
   kind: "video",
   title: "Clip",
-  feedback: { verdict: true },
+  feedback: {
+    form: [
+      {
+        id: "feel",
+        type: "choice",
+        label: "观感",
+        required: true,
+        options: [
+          { id: "smooth", label: "流畅" },
+          { id: "stutter", label: "卡顿" },
+          { id: "again", label: "再看一遍" },
+        ],
+      },
+    ],
+  },
   assetIDs: ["c"],
 }
 const notes: ReviewShell.ItemInfo = {
   id: "notes",
   kind: "custom",
   title: "设置页",
-  feedback: { checks: [{ id: "wide", label: "横屏不遮挡" }] },
+  feedback: {
+    form: [{ id: "note", type: "text", label: "补充说明", placeholder: "可选" }],
+  },
   assetIDs: [],
 }
 
@@ -33,7 +67,7 @@ describe("draft", () => {
     expect(ReviewShell.parse(JSON.stringify({ v: 1, decision: "maybe" }))).toEqual(ReviewShell.empty())
   })
 
-  test("round-trips a valid draft", () => {
+  test("round-trips a valid draft, including form answers and a drawer toggle", () => {
     const draft: ReviewShell.Draft = {
       v: 1,
       decision: "changes",
@@ -41,7 +75,8 @@ describe("draft", () => {
       item: "shots",
       asset: { shots: "near" },
       seen: { shots: true },
-      items: { shots: { assets: { far: { verdict: "fail", text: "阴影反了" } } } },
+      drawer: { shots: "open" },
+      items: { shots: { answers: { verdict: "fail", comment: "阴影反了" } } },
     }
     expect(ReviewShell.parse(JSON.stringify(draft))).toEqual(draft)
     expect(ReviewShell.key("r1")).toBe("opencode.review.draft.r1")
@@ -49,61 +84,66 @@ describe("draft", () => {
 })
 
 describe("status and required items", () => {
-  test("is unread until opened, open once seen, and follows asset verdicts", () => {
+  test("is unread until opened, open once seen, and follows a natural pass/fail answer", () => {
     const draft = ReviewShell.empty()
     expect(ReviewShell.status(shots, draft)).toBe("unread")
     expect(ReviewShell.itemVerdict(shots, draft)).toBeUndefined()
     draft.seen = { shots: true }
     expect(ReviewShell.status(shots, draft)).toBe("open")
-    draft.items = { shots: { assets: { far: { verdict: "pass" }, near: { verdict: "pass" } } } }
+    draft.items = { shots: { answers: { verdict: "pass" } } }
     expect(ReviewShell.itemVerdict(shots, draft)).toBe("pass")
     expect(ReviewShell.status(shots, draft)).toBe("pass")
-    draft.items.shots.assets!.far = { verdict: "fail" }
+    draft.items.shots.answers = { verdict: "fail" }
     expect(ReviewShell.itemVerdict(shots, draft)).toBe("fail")
     expect(ReviewShell.status(shots, draft)).toBe("fail")
   })
 
-  test("an explicit item verdict wins over its assets", () => {
+  test("a custom bridge verdict still counts, and a non-pass/fail choice does not", () => {
     const draft: ReviewShell.Draft = {
       v: 1,
       decision: "continue",
-      items: { shots: { verdict: "pass", assets: { far: { verdict: "fail" } } } },
+      items: {
+        notes: { verdict: "fail" },
+        clip: { answers: { feel: "smooth" } },
+      },
     }
-    expect(ReviewShell.itemVerdict(shots, draft)).toBe("pass")
+    expect(ReviewShell.itemVerdict(notes, draft)).toBe("fail")
+    expect(ReviewShell.status(notes, draft)).toBe("fail")
+    expect(ReviewShell.itemVerdict(clip, draft)).toBeUndefined()
+    expect(ReviewShell.status(clip, draft)).toBe("open")
   })
 
-  test("required items need a full verdict; optional ones count as done once seen", () => {
+  test("required gaps honor when; optional items count as done once seen", () => {
     const draft = ReviewShell.empty()
-    expect(ReviewShell.missing(items, draft).map((item) => item.id)).toEqual(["shots"])
+    expect(ReviewShell.missing(items, draft).map((item) => item.id)).toEqual(["shots", "clip"])
     expect(ReviewShell.completed(items, draft)).toBe(0)
     draft.seen = { notes: true }
     expect(ReviewShell.completed(items, draft)).toBe(1)
-    draft.items = { shots: { assets: { far: { verdict: "pass" } } } }
-    expect(ReviewShell.missing(items, draft)).toHaveLength(1)
-    draft.items.shots.assets!.near = { verdict: "pass" }
+    draft.items = { shots: { answers: { verdict: "fail" } } }
+    expect(ReviewShell.missing(items, draft).map((item) => item.id)).toEqual(["shots", "clip"])
+    draft.items.shots.answers = { verdict: "fail", comment: "阴影反了" }
+    expect(ReviewShell.missing(items, draft).map((item) => item.id)).toEqual(["clip"])
+    draft.items.shots.answers = { verdict: "pass" }
+    draft.items.clip = { answers: { feel: "smooth" } }
     expect(ReviewShell.missing(items, draft)).toEqual([])
-    draft.items.clip = { assets: { c: { verdict: "fail" } } }
     expect(ReviewShell.completed(items, draft)).toBe(3)
   })
 })
 
 describe("submission", () => {
-  test("drops empty entries and keeps checks, texts and per-asset verdicts", () => {
+  test("drops empty entries and keeps structured answers plus annotations", () => {
+    const marks = [{ n: 1, shape: "rect" as const, rect: { x1: 10, y1: 20, x2: 80, y2: 90 }, text: "阴影反了" }]
     const draft: ReviewShell.Draft = {
       v: 1,
       decision: "changes",
       text: "  整体再亮一点  ",
       items: {
         shots: {
-          text: "远景不行",
-          checks: { shadow: "fail" },
-          assets: {
-            far: { verdict: "fail", text: " 阴影反了 " },
-            near: { verdict: "pass" },
-          },
+          answers: { verdict: "fail", checks: ["shadow"], comment: " 远景不行 " },
+          assets: { far: { annotations: marks }, near: {} },
         },
         clip: { assets: { c: {} } },
-        notes: { checks: { wide: "pass" }, text: "  " },
+        notes: { answers: { note: "  " } },
       },
     }
     expect(ReviewShell.toSubmission(items, draft)).toEqual({
@@ -112,18 +152,12 @@ describe("submission", () => {
       items: [
         {
           id: "shots",
-          text: "远景不行",
-          checks: [{ id: "shadow", verdict: "fail" }],
-          assets: [
-            { asset: "far", verdict: "fail", text: "阴影反了" },
-            { asset: "near", verdict: "pass" },
-          ],
+          answers: { verdict: "fail", checks: ["shadow"], comment: "远景不行" },
+          assets: [{ asset: "far", annotations: marks }],
         },
-        { id: "notes", checks: [{ id: "wide", verdict: "pass" }] },
       ],
     })
   })
-
 
   test("keeps annotation marks and raw overlay data in the submission and treats them as input", () => {
     const marks = [{ n: 1, shape: "rect" as const, rect: { x1: 10, y1: 20, x2: 80, y2: 90 }, text: "阴影反了" }]
@@ -141,7 +175,6 @@ describe("submission", () => {
       items: [{ id: "shots", assets: [{ asset: "far", annotations: marks, raw }] }],
     })
   })
-
 
   test("keeps video frame annotations and raw overlay data in the submission", () => {
     const marks = [
@@ -171,8 +204,7 @@ describe("submission", () => {
     })
   })
 
-
-  test("keeps a custom page payload in the draft and the submission", () => {
+  test("keeps a custom page payload, bridge verdict and text in the draft and the submission", () => {
     const custom = { volume: 0.8, preset: "night" }
     const draft: ReviewShell.Draft = {
       v: 1,
@@ -192,12 +224,12 @@ describe("submission", () => {
     })
   })
 
-  test("suggests changes when anything failed, continue when every judged item passed, and keeps stop", () => {
-    const draft: ReviewShell.Draft = { v: 1, decision: "continue", items: { shots: { verdict: "fail" } } }
+  test("suggests changes when a natural fail is set, continue when every judged item passed, and keeps stop", () => {
+    const draft: ReviewShell.Draft = { v: 1, decision: "continue", items: { shots: { answers: { verdict: "fail" } } } }
     expect(ReviewShell.suggest(items, draft)).toBe("changes")
     draft.items = {
-      shots: { assets: { far: { verdict: "pass" }, near: { verdict: "pass" } } },
-      clip: { assets: { c: { verdict: "pass" } } },
+      shots: { answers: { verdict: "pass" } },
+      notes: { verdict: "pass" },
     }
     expect(ReviewShell.suggest(items, draft)).toBe("continue")
     draft.decision = "stop"

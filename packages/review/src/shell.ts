@@ -1,7 +1,8 @@
 export * as ReviewShell from "./shell.js"
 
 import type { ReviewRequest } from "./request.js"
-import type { ReviewResult } from "./result.js"
+import { ReviewForm } from "./form.js"
+import { ReviewResult } from "./result.js"
 import type { ReviewState } from "./state.js"
 
 export type Verdict = "pass" | "fail"
@@ -16,8 +17,6 @@ export const STATUS_LABEL: Record<Status, string> = {
 }
 
 export interface AssetDraft {
-  verdict?: Verdict
-  text?: string
   /** Structured marks for this asset; restored after a refresh. */
   annotations?: ReviewResult.Annotation[]
   /** Annotator-native export without embedded images (feedback-minimal-4 or video-feedback-1). */
@@ -27,12 +26,14 @@ export interface AssetDraft {
 }
 
 export interface ItemDraft {
-  verdict?: Verdict
-  text?: string
-  checks?: { [id: string]: Verdict }
+  /** Answers to the agent-defined form, keyed by field id. */
+  answers?: ReviewForm.Answers
   assets?: { [id: string]: AssetDraft }
   /** Structured payload from a custom page (opencode-review protocol). */
   custom?: unknown
+  /** Custom pages may still report a verdict / note through the v1 bridge. */
+  verdict?: Verdict
+  text?: string
 }
 
 export interface Draft {
@@ -45,6 +46,8 @@ export interface Draft {
   asset?: { [item: string]: string }
   seen?: { [item: string]: true }
   items?: { [id: string]: ItemDraft }
+  /** Manual feedback-drawer toggle, remembered per item. */
+  drawer?: { [item: string]: "open" | "closed" }
 }
 
 /** Slim view of a stored item, enough to drive the shell and to build a submission. */
@@ -83,24 +86,28 @@ export function assetDraft(draft: Draft, item: string, asset: string): AssetDraf
   return itemDraft(draft, item).assets?.[asset] ?? {}
 }
 
-const asksVerdict = (item: ItemInfo) => Boolean(item.feedback?.verdict || item.feedback?.required)
+export function formOf(item: ItemInfo): ReadonlyArray<ReviewForm.Field> {
+  return item.feedback?.form ?? []
+}
 
-/** An item-level verdict, or the one implied by its assets: any fail wins, else all must pass. */
+export function answersOf(item: ItemInfo, draft: Draft): ReviewForm.Answers | undefined {
+  return itemDraft(draft, item.id).answers
+}
+
+/** A natural pass / fail from the form, or a custom page's bridge verdict. */
 export function itemVerdict(item: ItemInfo, draft: Draft): Verdict | undefined {
   const saved = itemDraft(draft, item.id)
-  if (saved.verdict) return saved.verdict
-  if (!item.feedback?.verdict || item.assetIDs.length === 0) return undefined
-  const verdicts = item.assetIDs.map((id) => saved.assets?.[id]?.verdict)
-  if (verdicts.some((verdict) => verdict === "fail")) return "fail"
-  if (verdicts.every((verdict) => verdict === "pass")) return "pass"
-  return undefined
+  if (saved.verdict === "pass" || saved.verdict === "fail") return saved.verdict
+  return ReviewForm.itemPolarity(formOf(item), saved.answers)
 }
 
 function hasInput(item: ItemInfo, draft: Draft) {
   const saved = itemDraft(draft, item.id)
   if (saved.verdict || saved.text?.trim() || saved.custom !== undefined) return true
-  if (Object.values(saved.checks ?? {}).length > 0) return true
-  return Object.values(saved.assets ?? {}).some((asset) => Boolean(asset.verdict || asset.text?.trim() || asset.annotations?.length || asset.raw))
+  if (saved.answers && Object.keys(saved.answers).length > 0) return true
+  return Object.values(saved.assets ?? {}).some((asset) =>
+    Boolean(asset.annotations?.length || asset.raw || asset.files?.length),
+  )
 }
 
 export function status(item: ItemInfo, draft: Draft): Status {
@@ -110,16 +117,18 @@ export function status(item: ItemInfo, draft: Draft): Status {
   return "unread"
 }
 
-/** Required items that still need a pass / fail (item-level, or every asset when verdicts are per asset). */
+/** Items with a visible required form field that still has no answer. */
 export function missing(items: ReadonlyArray<ItemInfo>, draft: Draft): ReadonlyArray<ItemInfo> {
-  return items.filter((item) => item.feedback?.required && !itemVerdict(item, draft))
+  return items.filter((item) => ReviewForm.missing(formOf(item), answersOf(item, draft)).length > 0)
 }
 
 /** How many items count as done in the progress bar. */
 export function completed(items: ReadonlyArray<ItemInfo>, draft: Draft) {
-  return items.filter((item) =>
-    asksVerdict(item) ? Boolean(itemVerdict(item, draft)) : Boolean(draft.seen?.[item.id]),
-  ).length
+  return items.filter((item) => {
+    if (ReviewForm.missing(formOf(item), answersOf(item, draft)).length > 0) return false
+    const required = formOf(item).some((field) => field.required)
+    return required || Boolean(draft.seen?.[item.id])
+  }).length
 }
 
 export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): ReviewResult.Submission {
@@ -128,34 +137,31 @@ export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): Revi
     const assets = item.assetIDs.flatMap((id) => {
       const asset = saved.assets?.[id]
       if (!asset) return []
-      const text = asset.text?.trim()
-      const annotations = asset.annotations?.filter((annotation) => annotation.text?.trim() || annotation.shape !== "global")
-      if (!asset.verdict && !text && !annotations?.length && asset.raw === undefined) return []
+      const annotations = asset.annotations?.filter(
+        (annotation) => annotation.text?.trim() || annotation.shape !== "global",
+      )
+      if (!annotations?.length && asset.raw === undefined) return []
       return [
         {
           asset: id,
-          ...(asset.verdict ? { verdict: asset.verdict } : {}),
-          ...(text ? { text } : {}),
           ...(annotations?.length ? { annotations } : {}),
           ...(asset.raw !== undefined ? { raw: asset.raw } : {}),
           ...(asset.files?.length ? { files: asset.files } : {}),
         },
       ]
     })
-    const checks = (item.feedback?.checks ?? []).flatMap((check) => {
-      const verdict = saved.checks?.[check.id]
-      return verdict ? [{ id: check.id, verdict }] : []
-    })
-    const text = saved.text?.trim()
+    const answers = ReviewForm.sanitize(formOf(item), saved.answers, ReviewResult.MAX_TEXT)
     const custom = item.kind === "custom" ? saved.custom : undefined
-    if (!saved.verdict && !text && assets.length === 0 && checks.length === 0 && custom === undefined) return []
+    const verdict = item.kind === "custom" && (saved.verdict === "pass" || saved.verdict === "fail") ? saved.verdict : undefined
+    const text = item.kind === "custom" ? saved.text?.trim() : undefined
+    if (!answers && !verdict && !text && assets.length === 0 && custom === undefined) return []
     return [
       {
         id: item.id,
-        ...(saved.verdict ? { verdict: saved.verdict } : {}),
+        ...(answers ? { answers } : {}),
+        ...(verdict ? { verdict } : {}),
         ...(text ? { text } : {}),
         ...(assets.length > 0 ? { assets } : {}),
-        ...(checks.length > 0 ? { checks } : {}),
         ...(custom !== undefined ? { custom } : {}),
       },
     ]
@@ -168,14 +174,11 @@ export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): Revi
   }
 }
 
-/** Suggests an overall decision from item verdicts; never overrides an explicit stop. */
+/** Suggests an overall decision from natural pass/fail answers; never overrides an explicit stop. */
 export function suggest(items: ReadonlyArray<ItemInfo>, draft: Draft): Decision {
   if (draft.decision === "stop") return "stop"
-  if (items.some((item) => itemVerdict(item, draft) === "fail")) return "changes"
-  if (
-    items.some((item) => asksVerdict(item)) &&
-    items.filter((item) => asksVerdict(item)).every((item) => itemVerdict(item, draft) === "pass")
-  )
-    return "continue"
+  const judged = items.filter((item) => itemVerdict(item, draft) !== undefined)
+  if (judged.some((item) => itemVerdict(item, draft) === "fail")) return "changes"
+  if (judged.length > 0 && judged.every((item) => itemVerdict(item, draft) === "pass")) return "continue"
   return draft.decision
 }

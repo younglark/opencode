@@ -324,7 +324,38 @@ async function main() {
           title: "关卡截图",
           note: "请看阴影方向和地面亮度。",
           bundle: "preview",
-          feedback: { annotate: true, verdict: true, checks: [{ id: "shadow", label: "阴影方向正确" }] },
+          feedback: {
+            annotate: true,
+            form: [
+              {
+                id: "verdict",
+                type: "choice",
+                label: "结论",
+                required: true,
+                options: [
+                  { id: "pass", label: "通过" },
+                  { id: "fail", label: "不通过" },
+                ],
+              },
+              {
+                id: "checks",
+                type: "multi",
+                label: "还需要看",
+                options: [
+                  { id: "shadow", label: "阴影方向" },
+                  { id: "ground", label: "地面亮度" },
+                ],
+              },
+              {
+                id: "comment",
+                type: "text",
+                label: "修改意见",
+                required: true,
+                placeholder: "选“不通过”时请说明要改什么",
+                when: { field: "verdict", equals: "fail" },
+              },
+            ],
+          },
           assets: [{ id: "s", label: "夜景", stored: stored("shot.png", "image/png", media.png, "shot.png") }],
         },
         {
@@ -333,7 +364,23 @@ async function main() {
           title: "过场动画",
           note: "可以逐帧看拖尾。",
           bundle: "preview",
-          feedback: { annotate: true, verdict: true },
+          feedback: {
+            annotate: true,
+            form: [
+              {
+                id: "feel",
+                type: "choice",
+                label: "观感",
+                required: true,
+                options: [
+                  { id: "smooth", label: "流畅" },
+                  { id: "stutter", label: "卡顿" },
+                  { id: "again", label: "再看一遍" },
+                ],
+              },
+              { id: "note", type: "text", label: "备注", placeholder: "可选" },
+            ],
+          },
           assets: [{ id: "c", label: "动画", stored: stored("clip.webm", "video/webm", media.webm, "clip.webm"), fps: 10 }],
         },
         {
@@ -341,7 +388,28 @@ async function main() {
           kind: "diff",
           title: "代码改动",
           bundle: "preview",
-          feedback: { verdict: true },
+          feedback: {
+            form: [
+              {
+                id: "merge",
+                type: "choice",
+                label: "这次改动",
+                required: true,
+                options: [
+                  { id: "ok", label: "可以合入" },
+                  { id: "rework", label: "需要再改" },
+                ],
+              },
+              {
+                id: "comment",
+                type: "text",
+                label: "具体意见",
+                required: true,
+                placeholder: "选“需要再改”时请说明",
+                when: { field: "merge", equals: "rework" },
+              },
+            ],
+          },
           assets: [],
           diff: { files: ["src/lighting.ts"] },
         },
@@ -350,7 +418,7 @@ async function main() {
           kind: "custom",
           title: "画面设置",
           bundle: "preview",
-          feedback: { required: true },
+          feedback: { form: [{ id: "note", type: "text", label: "补充说明", placeholder: "对设置页的额外意见（可选）" }] },
           assets: [],
           custom: {
             entry: "index.html",

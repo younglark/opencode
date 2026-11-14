@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ReviewDecide } from "../src/decide.js"
+import { ReviewForm } from "../src/form.js"
 import { ReviewRequest } from "../src/request.js"
 import { ReviewResult } from "../src/result.js"
 import { ReviewState } from "../src/state.js"
@@ -19,7 +20,18 @@ const items: ReviewRequest.StoredItem[] = [
     kind: "image",
     title: "Boss room",
     bundle: "r1",
-    feedback: { verdict: true, annotate: true, checks: [{ id: "light", label: "灯光方向" }] },
+    feedback: {
+      annotate: true,
+      form: [
+        ReviewForm.verdictChoice(),
+        {
+          id: "checks",
+          type: "multi",
+          label: "检查项",
+          options: [{ id: "light", label: "灯光方向" }],
+        },
+      ],
+    },
     assets: [
       { id: "far", label: "远景", stored: stored("far.png") },
       { id: "near", stored: stored("near.png") },
@@ -77,6 +89,30 @@ describe("request", () => {
     expect(errors.some((error) => error.includes("only diff takes diff"))).toBe(true)
   })
 
+  test("validate reports problems in an item's form", () => {
+    const bad = ReviewRequest.validate({
+      title: "t",
+      items: [
+        {
+          id: "a",
+          kind: "image",
+          title: "A",
+          assets: [{ path: "x.png" }],
+          feedback: {
+            form: [
+              { id: "verdict", type: "choice", label: "结论" },
+              { id: "note", type: "text", label: "意见", when: { field: "missing", equals: "fail" } },
+            ],
+          },
+        },
+      ],
+    })
+    expect(bad.ok).toBe(false)
+    const errors = bad.ok ? [] : bad.errors
+    expect(errors.some((error) => error.includes("choice needs options"))).toBe(true)
+    expect(errors.some((error) => error.includes('when.field "missing" does not exist'))).toBe(true)
+  })
+
   test("the page states what the agent does while waiting", () => {
     expect(ReviewRequest.describeWait(undefined, 0)).toContain("没有停下来等你")
     expect(ReviewRequest.describeWait({ mode: "block" }, 0)).toContain("正在等你的反馈")
@@ -97,22 +133,18 @@ describe("result", () => {
     items: [
       {
         id: "shots",
-        checks: [
-          { id: "light", verdict: "fail" },
-          { id: "ghost", verdict: "pass" },
-        ],
+        answers: { verdict: "fail", checks: ["light", "ghost"] },
         assets: [
           {
             asset: "far",
-            verdict: "fail",
             annotations: [
               { n: 1, shape: "rect", rect: { x1: 812, y1: 344, x2: 990, y2: 420 }, text: "阴影方向反了" },
               { n: 2, shape: "point", rect: { x1: 1520, y1: 212, x2: 1520, y2: 212 }, text: "白点闪烁" },
             ],
             files: ["shots-far.png", "missing.png"],
           },
-          { asset: "near", verdict: "pass" },
-          { asset: "unknown", verdict: "fail" },
+          { asset: "near" },
+          { asset: "unknown", annotations: [{ n: 9, shape: "point" as const, rect: { x1: 1, y1: 1, x2: 1, y2: 1 }, text: "no" }] },
         ],
       },
       {
@@ -156,18 +188,18 @@ describe("result", () => {
     diffFiles: ["src/shadow.ts"],
   })!
 
-  test("keeps only what the request asked about and aggregates verdicts", () => {
+  test("keeps only what the request asked about and sanitizes form answers", () => {
     expect(checked.decision).toBe("changes")
     expect(checked.text).toBe("灯光整体偏暗")
     expect(checked.items.map((item) => item.id)).toEqual(["shots", "attack", "diff", "settings"])
     expect(checked.skipped).toEqual(["untouched"])
     const shots = checked.items[0]
-    expect(shots.verdict).toBe("fail")
-    expect(shots.checks).toEqual([{ id: "light", label: "灯光方向", verdict: "fail" }])
-    expect(shots.assets.map((asset) => asset.asset)).toEqual(["far", "near"])
+    expect(shots.answers).toEqual({ verdict: "fail", checks: ["light"] })
+    expect(shots.assets.map((asset) => asset.asset)).toEqual(["far"])
     expect(shots.assets[0].files).toEqual(["shots-far.png"])
     expect(shots.assets[0].label).toBe("远景")
     expect(checked.items[3].custom).toEqual({ landscape: "ok" })
+    expect(checked.items[3].verdict).toBe("pass")
     expect(
       ReviewResult.check({ reviewID: "r1", now: 0, raw: { decision: "maybe" }, items, uploaded: new Set() }),
     ).toBeUndefined()
@@ -177,8 +209,9 @@ describe("result", () => {
     const text = ReviewResult.prompt(checked, "/data/review/r1/feedback/feedback.json")
     expect(text).toContain("request these changes")
     expect(text).toContain('1. image "Boss room" [shots] ✗ fail')
-    expect(text).toContain('check "灯光方向" ✗ fail')
-    expect(text).toContain("- far (远景) ✗ fail")
+    expect(text).toContain("结论: 不通过")
+    expect(text).toContain("检查项: 灯光方向")
+    expect(text).toContain("- far (远景)")
     expect(text).toContain("① box (812,344)-(990,420): 阴影方向反了")
     expect(text).toContain("② point (1520,212): 白点闪烁")
     expect(text).toContain("① @00:03.200 (frame 96) box (480,260)-(620,400): 拖尾断开")

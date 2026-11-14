@@ -39,15 +39,66 @@ export const SCRIPT = String.raw`
     item.assets[asset] = item.assets[asset] || {}
     return item.assets[asset]
   }
+  const formOf = (item) => (item && item.feedback && item.feedback.form) || []
+  const answersOf = (item) => ((draft.items && draft.items[item.id]) || {}).answers || {}
+  const equalsList = (equals) => (typeof equals === "string" ? [equals] : equals || [])
+  const visible = (field, answers) => {
+    if (!field.when) return true
+    const value = answers && answers[field.when.field]
+    const want = equalsList(field.when.equals)
+    if (Array.isArray(value)) return value.some((entry) => want.indexOf(entry) >= 0)
+    return typeof value === "string" && want.indexOf(value) >= 0
+  }
+  const visibleFields = (fields, answers) => fields.filter((field) => visible(field, answers))
+  const isAnswered = (field, answers) => {
+    const value = answers && answers[field.id]
+    if (field.type === "multi") return Array.isArray(value) && value.length > 0
+    return typeof value === "string" && value.trim() !== ""
+  }
+  const missingFields = (fields, answers) =>
+    visibleFields(fields, answers).filter((field) => field.required && !isAnswered(field, answers))
+  const PASS = { pass: 1, ok: 1, yes: 1, "通过": 1 }
+  const FAIL = { fail: 1, no: 1, ng: 1, "不通过": 1 }
+  const optionPolarity = (option) => {
+    const id = String(option.id || "").trim().toLowerCase()
+    const label = String(option.label || "").trim()
+    const lower = label.toLowerCase()
+    if (PASS[id] || PASS[label] || PASS[lower]) return "pass"
+    if (FAIL[id] || FAIL[label] || FAIL[lower]) return "fail"
+  }
+  const isPassFail = (field) => {
+    if (field.type !== "choice" || !field.options || field.options.length !== 2) return false
+    const polarities = field.options.map(optionPolarity)
+    return polarities.indexOf("pass") >= 0 && polarities.indexOf("fail") >= 0
+  }
+  const passFailField = (fields, answers) => {
+    const choices = visibleFields(fields, answers).filter(
+      (field) => field.type === "choice" && field.options && field.options.length === 2,
+    )
+    const natural = choices.find(isPassFail)
+    if (natural) return natural
+    const required = choices.filter((field) => field.required)
+    return required.length === 1 ? required[0] : undefined
+  }
+  const optionFor = (field, polarity) => {
+    if (!field || !field.options) return
+    const match = field.options.find((option) => optionPolarity(option) === polarity)
+    if (match) return match.id
+    if (field.options.length === 2 && !isPassFail(field)) return polarity === "pass" ? field.options[0].id : field.options[1].id
+  }
+  const itemPolarity = (fields, answers) => {
+    const field = visibleFields(fields, answers).find(isPassFail)
+    if (!field) return
+    const value = answers && answers[field.id]
+    if (typeof value !== "string") return
+    const option = field.options.find((entry) => entry.id === value)
+    return option && optionPolarity(option)
+  }
   const itemVerdict = (item) => {
     const saved = (draft.items && draft.items[item.id]) || {}
-    if (saved.verdict) return saved.verdict
-    if (!item.feedback || !item.feedback.verdict || item.assetIDs.length === 0) return
-    const verdicts = item.assetIDs.map((id) => (saved.assets && saved.assets[id] && saved.assets[id].verdict) || null)
-    if (verdicts.some((value) => value === "fail")) return "fail"
-    if (verdicts.every((value) => value === "pass")) return "pass"
+    if (saved.verdict === "pass" || saved.verdict === "fail") return saved.verdict
+    return itemPolarity(formOf(item), saved.answers)
   }
-  const asksVerdict = (item) => !!(item.feedback && (item.feedback.verdict || item.feedback.required))
   const statusOf = (item) => {
     const verdict = itemVerdict(item)
     if (verdict) return verdict
@@ -55,20 +106,24 @@ export const SCRIPT = String.raw`
     const input =
       saved.verdict ||
       (saved.text && saved.text.trim()) ||
-      (saved.checks && Object.keys(saved.checks).length) ||
-      (saved.custom !== undefined) ||
+      saved.custom !== undefined ||
+      (saved.answers && Object.keys(saved.answers).length) ||
       (saved.assets &&
         Object.keys(saved.assets).some((id) => {
           const asset = saved.assets[id]
-          return asset.verdict || (asset.text && asset.text.trim()) || (asset.annotations && asset.annotations.length) || asset.raw
+          return (asset.annotations && asset.annotations.length) || asset.raw || (asset.files && asset.files.length)
         }))
     if ((draft.seen && draft.seen[item.id]) || input) return "open"
     return "unread"
   }
   const labels = { unread: "未看", open: "已看", pass: "通过", fail: "不通过" }
-  const missing = () => items.filter((item) => item.feedback && item.feedback.required && !itemVerdict(item))
+  const missing = () => items.filter((item) => missingFields(formOf(item), answersOf(item)).length)
   const completed = () =>
-    items.filter((item) => (asksVerdict(item) ? !!itemVerdict(item) : !!(draft.seen && draft.seen[item.id]))).length
+    items.filter((item) => {
+      if (missingFields(formOf(item), answersOf(item)).length) return false
+      const required = formOf(item).some((field) => field.required)
+      return required || !!(draft.seen && draft.seen[item.id])
+    }).length
   const toSubmission = () => {
     const result = []
     for (const item of items) {
@@ -76,30 +131,33 @@ export const SCRIPT = String.raw`
       const assets = []
       for (const id of item.assetIDs) {
         const asset = saved.assets && saved.assets[id]
-        const text = asset && asset.text && asset.text.trim()
         const annotations = asset && asset.annotations
-        if (!asset || (!asset.verdict && !text && !(annotations && annotations.length) && asset.raw === undefined)) continue
+        if (!asset || (!(annotations && annotations.length) && asset.raw === undefined)) continue
         const entry = { asset: id }
-        if (asset.verdict) entry.verdict = asset.verdict
-        if (text) entry.text = text
         if (annotations && annotations.length) entry.annotations = annotations
         if (asset.raw !== undefined) entry.raw = asset.raw
         if (asset.files && asset.files.length) entry.files = asset.files
         assets.push(entry)
       }
-      const checks = []
-      for (const check of (item.feedback && item.feedback.checks) || []) {
-        const verdict = saved.checks && saved.checks[check.id]
-        if (verdict) checks.push({ id: check.id, verdict })
+      const answers = {}
+      const current = saved.answers || {}
+      for (const field of formOf(item)) {
+        if (!visible(field, current)) continue
+        const value = current[field.id]
+        if (field.type === "multi") {
+          if (Array.isArray(value) && value.length) answers[field.id] = value
+        } else if (typeof value === "string" && value.trim()) answers[field.id] = field.type === "text" ? value.trim() : value
       }
-      const text = saved.text && saved.text.trim()
+      const hasAnswers = Object.keys(answers).length > 0
       const custom = item.kind === "custom" ? saved.custom : undefined
-      if (!saved.verdict && !text && assets.length === 0 && checks.length === 0 && custom === undefined) continue
+      const verdict = item.kind === "custom" && (saved.verdict === "pass" || saved.verdict === "fail") ? saved.verdict : undefined
+      const text = item.kind === "custom" && saved.text && saved.text.trim() ? saved.text.trim() : undefined
+      if (!hasAnswers && !verdict && !text && assets.length === 0 && custom === undefined) continue
       const entry = { id: item.id }
-      if (saved.verdict) entry.verdict = saved.verdict
+      if (hasAnswers) entry.answers = answers
+      if (verdict) entry.verdict = verdict
       if (text) entry.text = text
       if (assets.length) entry.assets = assets
-      if (checks.length) entry.checks = checks
       if (custom !== undefined) entry.custom = custom
       result.push(entry)
     }
@@ -112,9 +170,24 @@ export const SCRIPT = String.raw`
   const suggest = () => {
     if (draft.decision === "stop") return "stop"
     if (items.some((item) => itemVerdict(item) === "fail")) return "changes"
-    const judged = items.filter(asksVerdict)
+    const judged = items.filter((item) => itemVerdict(item))
     if (judged.length && judged.every((item) => itemVerdict(item) === "pass")) return "continue"
     return draft.decision
+  }
+  const setPassFail = (item, polarity) => {
+    if (!item) return false
+    const field = passFailField(formOf(item), answersOf(item))
+    if (!field) return false
+    const option = optionFor(field, polarity)
+    if (!option) return false
+    const saved = ensureItem(item.id)
+    saved.answers = saved.answers || {}
+    saved.answers[field.id] = option
+    applySuggest()
+    syncForm(item)
+    syncNav()
+    save()
+    return true
   }
 
   const origin = location.origin
@@ -226,7 +299,7 @@ export const SCRIPT = String.raw`
       } catch (error) {}
     }
     applySuggest()
-    syncVerdicts(item)
+    syncForm(item)
     syncNav()
     save()
   }
@@ -242,39 +315,37 @@ export const SCRIPT = String.raw`
   const pressed = (el, on) => {
     if (el) el.setAttribute("aria-pressed", on ? "true" : "false")
   }
-  const syncVerdicts = (item) => {
+  const HINT = "J / K 切换项 · Ctrl / ⌘ + Enter 提交"
+  const HINT_PF = "J / K 切换项 · P / F 通过或不通过 · Ctrl / ⌘ + Enter 提交"
+  const syncHint = () => {
+    const hint = qs("[data-shortcut-hint]")
+    if (!hint) return
+    const item = currentItem()
+    hint.textContent = item && passFailField(formOf(item), answersOf(item)) ? HINT_PF : HINT
+  }
+  const syncForm = (item) => {
     const saved = (draft.items && draft.items[item.id]) || {}
+    const answers = saved.answers || {}
     const pane = qs('[data-feedback-for="' + CSS.escape(item.id) + '"]')
-    const asset = currentAsset(item)
-    qsa("[data-verdict]", root).forEach((button) => {
-      if (button.getAttribute("data-item") !== item.id) return
-      const scope = button.getAttribute("data-scope")
-      const value = button.getAttribute("data-verdict")
-      if (scope === "item") pressed(button, saved.verdict === value)
-      else if (scope === "asset") {
-        const id = button.getAttribute("data-asset") || asset
-        pressed(button, !!(saved.assets && saved.assets[id] && saved.assets[id].verdict === value))
-      } else if (scope === "check") {
-        const id = button.getAttribute("data-check")
-        pressed(button, !!(saved.checks && saved.checks[id] === value))
-      }
+    if (!pane) return
+    const fields = formOf(item)
+    qsa("[data-form-field]", pane).forEach((el) => {
+      const field = fields.find((entry) => entry.id === el.getAttribute("data-form-field"))
+      el.hidden = !!(field && !visible(field, answers))
     })
-    if (pane) {
-      qsa("[data-scope='asset-text']", pane).forEach((area) => {
-        if (area.getAttribute("data-asset")) return
-        if (area !== document.activeElement) area.value = (saved.assets && saved.assets[asset] && saved.assets[asset].text) || ""
-      })
-    }
-    qsa("[data-scope='asset-text'][data-asset]", root).forEach((area) => {
-      if (area.getAttribute("data-item") !== item.id) return
+    qsa("[data-form-option]", pane).forEach((button) => {
+      const fieldID = button.getAttribute("data-field")
+      const option = button.getAttribute("data-option")
+      const field = fields.find((entry) => entry.id === fieldID)
+      const value = answers[fieldID]
+      if (field && field.type === "multi") pressed(button, Array.isArray(value) && value.indexOf(option) >= 0)
+      else pressed(button, value === option)
+    })
+    qsa("[data-form-text]", pane).forEach((area) => {
       if (area === document.activeElement) return
-      const id = area.getAttribute("data-asset")
-      area.value = (saved.assets && saved.assets[id] && saved.assets[id].text) || ""
+      const value = answers[area.getAttribute("data-field")]
+      area.value = typeof value === "string" ? value : ""
     })
-    const itemText = qs("[data-scope='item-text'][data-item='" + CSS.escape(item.id) + "']")
-    if (itemText && itemText !== document.activeElement) itemText.value = saved.text || ""
-    const label = pane && qs("[data-current-asset]", pane)
-    if (label) label.textContent = asset
   }
   const syncNav = () => {
     for (const item of items) {
@@ -301,6 +372,7 @@ export const SCRIPT = String.raw`
     qsa("[data-decision]").forEach((button) => pressed(button, button.getAttribute("data-decision") === draft.decision))
     const overall = qs("[data-overall]")
     if (overall && overall !== document.activeElement) overall.value = draft.text || ""
+    syncHint()
   }
 
   const measure = () => {
@@ -310,9 +382,8 @@ export const SCRIPT = String.raw`
     if (dock) document.documentElement.style.setProperty("--dock", dock.getBoundingClientRect().height + "px")
   }
   const needsDock = (item) => {
-    const feedback = item && item.feedback
-    if (!feedback) return false
-    return !!(feedback.verdict || feedback.required || (feedback.checks && feedback.checks.length) || item.annotate)
+    if (item && item.annotate) return true
+    return !!(item && missingFields(formOf(item), answersOf(item)).length)
   }
   const setDrawer = (open, manual) => {
     const pane = qs(".pane-feedback")
@@ -364,7 +435,7 @@ export const SCRIPT = String.raw`
         button.setAttribute("aria-current", button.getAttribute("data-asset-go") === asset ? "true" : "false")
       })
     }
-    syncVerdicts(item)
+    syncForm(item)
     syncNav()
     save()
     if (item.annotate) {
@@ -413,8 +484,15 @@ export const SCRIPT = String.raw`
     if (left.length) {
       show(left[0].id)
       setDrawer(true, true)
-      showError("还有必填项未给结论：" + left.map((item) => item.title).join("、"))
-      const gap = qs('.item-feedback[data-feedback-for="' + CSS.escape(left[0].id) + '"] [data-verdict]')
+      const gaps = missingFields(formOf(left[0]), answersOf(left[0]))
+      showError("还有必填项未填写：" + left.map((item) => item.title).join("、"))
+      const pane = qs('.item-feedback[data-feedback-for="' + CSS.escape(left[0].id) + '"]')
+      const field = gaps[0]
+      const gap =
+        pane &&
+        field &&
+        (qs('[data-form-option][data-field="' + CSS.escape(field.id) + '"]', pane) ||
+          qs('[data-form-text][data-field="' + CSS.escape(field.id) + '"]', pane))
       if (gap && gap.focus) gap.focus()
       return
     }
@@ -513,24 +591,29 @@ export const SCRIPT = String.raw`
     if (decision) return setDecision(decision.getAttribute("data-decision"))
     const submitBtn = event.target.closest("[data-submit]")
     if (submitBtn) return void submit()
-    const verdict = event.target.closest("[data-verdict]")
-    if (!verdict) return
-    const itemID = verdict.getAttribute("data-item") || currentItem().id
+    const option = event.target.closest("[data-form-option]")
+    if (!option) return
+    const itemID = option.getAttribute("data-item") || currentItem().id
     const item = byId[itemID]
     if (!item) return
-    const value = verdict.getAttribute("data-verdict")
-    const scope = verdict.getAttribute("data-scope")
-    if (scope === "item") ensureItem(item.id).verdict = value
-    else if (scope === "check") {
-      const saved = ensureItem(item.id)
-      saved.checks = saved.checks || {}
-      saved.checks[verdict.getAttribute("data-check")] = value
+    const fieldID = option.getAttribute("data-field")
+    const optionID = option.getAttribute("data-option")
+    const field = formOf(item).find((entry) => entry.id === fieldID)
+    if (!field) return
+    const saved = ensureItem(item.id)
+    saved.answers = saved.answers || {}
+    if (field.type === "multi") {
+      const current = Array.isArray(saved.answers[fieldID]) ? saved.answers[fieldID].slice() : []
+      const index = current.indexOf(optionID)
+      if (index >= 0) current.splice(index, 1)
+      else current.push(optionID)
+      if (current.length) saved.answers[fieldID] = current
+      else delete saved.answers[fieldID]
     } else {
-      const asset = verdict.getAttribute("data-asset") || currentAsset(item)
-      if (asset) assetOf(item.id, asset).verdict = value
+      saved.answers[fieldID] = optionID
     }
     applySuggest()
-    syncVerdicts(item)
+    syncForm(item)
     syncNav()
     save()
   })
@@ -538,12 +621,13 @@ export const SCRIPT = String.raw`
   root.addEventListener("input", (event) => {
     const area = event.target.closest("textarea")
     if (!area) return
-    const scope = area.getAttribute("data-scope")
-    if (scope === "item-text") ensureItem(area.getAttribute("data-item")).text = area.value
-    else if (scope === "asset-text") {
+    if (area.hasAttribute("data-form-text")) {
       const itemID = area.getAttribute("data-item") || currentItem().id
-      const asset = area.getAttribute("data-asset") || currentAsset(byId[itemID])
-      if (asset) assetOf(itemID, asset).text = area.value
+      const saved = ensureItem(itemID)
+      saved.answers = saved.answers || {}
+      saved.answers[area.getAttribute("data-field")] = area.value
+      const item = byId[itemID]
+      if (item) syncForm(item)
     } else if (area.hasAttribute("data-overall")) draft.text = area.value
     save()
   })
@@ -563,13 +647,7 @@ export const SCRIPT = String.raw`
       const index = items.findIndex((entry) => entry.id === item.id) - 1
       if (items[index]) show(items[index].id)
     } else if (event.key === "p" || event.key === "P" || event.key === "f" || event.key === "F") {
-      const value = event.key === "p" || event.key === "P" ? "pass" : "fail"
-      if (item.feedback && item.feedback.verdict && item.assetIDs.length) assetOf(item.id, currentAsset(item)).verdict = value
-      else ensureItem(item.id).verdict = value
-      applySuggest()
-      syncVerdicts(item)
-      syncNav()
-      save()
+      setPassFail(item, event.key === "p" || event.key === "P" ? "pass" : "fail")
     }
   })
 
@@ -611,13 +689,7 @@ export const SCRIPT = String.raw`
           const index = items.findIndex((entry) => entry.id === item.id) - 1
           if (items[index]) show(items[index].id)
         } else if (key === "p" || key === "P" || key === "f" || key === "F") {
-          const value = key === "p" || key === "P" ? "pass" : "fail"
-          if (item.feedback && item.feedback.verdict && item.assetIDs.length) assetOf(item.id, currentAsset(item)).verdict = value
-          else ensureItem(item.id).verdict = value
-          applySuggest()
-          syncVerdicts(item)
-          syncNav()
-          save()
+          setPassFail(item, key === "p" || key === "P" ? "pass" : "fail")
         }
       }
       return
@@ -683,13 +755,7 @@ export const SCRIPT = String.raw`
         const index = items.findIndex((entry) => entry.id === item.id) - 1
         if (items[index]) show(items[index].id)
       } else if (key === "p" || key === "P" || key === "f" || key === "F") {
-        const value = key === "p" || key === "P" ? "pass" : "fail"
-        if (item.feedback && item.feedback.verdict && item.assetIDs.length) assetOf(item.id, currentAsset(item)).verdict = value
-        else ensureItem(item.id).verdict = value
-        applySuggest()
-        syncVerdicts(item)
-        syncNav()
-        save()
+        setPassFail(item, key === "p" || key === "P" ? "pass" : "fail")
       }
     }
   })

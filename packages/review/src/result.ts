@@ -3,6 +3,7 @@ export * as ReviewResult from "./result.js"
 import { Option, Schema } from "effect"
 import type { ReviewRequest } from "./request.js"
 import { ReviewCustom } from "./custom.js"
+import { ReviewForm } from "./form.js"
 import { ReviewState } from "./state.js"
 
 /** What the approval page submits once, for every item at the same time. */
@@ -39,8 +40,6 @@ export type Annotation = typeof Annotation.Type
 
 export const AssetResult = Schema.Struct({
   asset: Schema.String,
-  verdict: Schema.optionalKey(Verdict),
-  text: Schema.optionalKey(Schema.String),
   annotations: Schema.optionalKey(Schema.Array(Annotation)),
   /** Uploaded images (numbered annotation renders, frames), by their name in the submission. */
   files: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -50,8 +49,10 @@ export type AssetResult = typeof AssetResult.Type
 
 export const ItemResult = Schema.Struct({
   id: Schema.String,
+  /** Answers to the item's agent-defined form, keyed by field id. */
+  answers: Schema.optionalKey(Schema.Record(Schema.String, ReviewForm.Answer)),
+  /** Custom pages may still report a verdict / note through the v1 bridge. */
   verdict: Schema.optionalKey(Verdict),
-  checks: Schema.optionalKey(Schema.Array(Schema.Struct({ id: Schema.String, verdict: Verdict }))),
   text: Schema.optionalKey(Schema.String),
   assets: Schema.optionalKey(Schema.Array(AssetResult)),
   custom: Schema.optionalKey(Schema.Unknown),
@@ -79,8 +80,10 @@ export interface CheckedItem {
   readonly id: string
   readonly kind: ReviewRequest.Kind
   readonly title: string
+  readonly answers?: ReviewForm.Answers
+  /** The item's form, kept so the prompt can print labels rather than field ids. */
+  readonly form?: ReadonlyArray<ReviewForm.Field>
   readonly verdict?: Verdict
-  readonly checks?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly verdict: Verdict }>
   readonly text?: string
   readonly assets: ReadonlyArray<CheckedAsset>
   readonly custom?: unknown
@@ -89,8 +92,6 @@ export interface CheckedItem {
 export interface CheckedAsset {
   readonly asset: string
   readonly label?: string
-  readonly verdict?: Verdict
-  readonly text?: string
   readonly annotations: ReadonlyArray<Annotation>
   readonly files: ReadonlyArray<string>
   readonly raw?: unknown
@@ -115,7 +116,7 @@ export function fileName(name: string) {
 }
 
 /**
- * Checks a submission against the request: unknown items, assets and checks are dropped, texts clipped, and file
+ * Checks a submission against the request: unknown items, assets and form fields are dropped, texts clipped, and file
  * references kept only when the file was uploaded. Items with nothing in them are listed as skipped.
  */
 export function check(input: {
@@ -150,30 +151,22 @@ export function check(input: {
         .filter((annotation) => annotation.text !== "" || annotation.shape !== "global")
       annotationBudget -= annotations.length
       const files = (asset.files ?? []).filter((name) => input.uploaded.has(name))
-      const text = clip(asset.text)
-      if (!asset.verdict && !text && annotations.length === 0 && files.length === 0) continue
+      if (annotations.length === 0 && files.length === 0 && asset.raw === undefined) continue
       const label = known.get(asset.asset)
       assets.push({
         asset: asset.asset,
         ...(label ? { label } : {}),
-        ...(asset.verdict ? { verdict: asset.verdict } : {}),
-        ...(text ? { text } : {}),
         annotations,
         files,
         ...(asset.raw !== undefined ? { raw: asset.raw } : {}),
       })
     }
-    const labels = new Map((item.feedback?.checks ?? []).map((check) => [check.id, check.label]))
-    const checks = (sent?.checks ?? []).flatMap((check) => {
-      const label = labels.get(check.id)
-      return label === undefined ? [] : [{ id: check.id, label, verdict: check.verdict }]
-    })
-    const verdicts = assets.flatMap((asset) => (asset.verdict ? [asset.verdict] : []))
-    const verdict =
-      sent?.verdict ?? (verdicts.includes("fail") ? "fail" : verdicts.length > 0 ? ("pass" as const) : undefined)
-    const text = clip(sent?.text)
+    const form = item.feedback?.form
+    const answers = ReviewForm.sanitize(form ?? [], sent?.answers, MAX_TEXT)
+    const verdict = item.kind === "custom" && (sent?.verdict === "pass" || sent?.verdict === "fail") ? sent.verdict : undefined
+    const text = item.kind === "custom" ? clip(sent?.text) : undefined
     const custom = item.kind === "custom" ? ReviewCustom.clip(sent?.custom) : undefined
-    if (!verdict && !text && assets.length === 0 && checks.length === 0 && custom === undefined) {
+    if (!answers && !verdict && !text && assets.length === 0 && custom === undefined) {
       skipped.push(item.id)
       continue
     }
@@ -181,8 +174,9 @@ export function check(input: {
       id: item.id,
       kind: item.kind,
       title: item.title,
+      ...(answers ? { answers } : {}),
+      ...(form && form.length > 0 ? { form } : {}),
       ...(verdict ? { verdict } : {}),
-      ...(checks.length > 0 ? { checks } : {}),
       ...(text ? { text } : {}),
       assets,
       ...(custom !== undefined ? { custom } : {}),
@@ -240,13 +234,14 @@ export function prompt(result: Result, feedbackPath?: string) {
   const lines = [head]
   if (result.text) lines.push("", result.text)
   result.items.forEach((item, index) => {
-    lines.push("", `${index + 1}. ${item.kind} "${item.title}" [${item.id}]${verdictText(item.verdict)}`)
+    const polarity = ReviewForm.itemPolarity((item.form ?? []), item.answers) ?? item.verdict
+    lines.push("", `${index + 1}. ${item.kind} "${item.title}" [${item.id}]${verdictText(polarity)}`)
     if (item.text) lines.push(`   ${item.text.replaceAll("\n", "\n   ")}`)
-    for (const check of item.checks ?? []) lines.push(`   check "${check.label}"${verdictText(check.verdict)}`)
+    for (const line of ReviewForm.format((item.form ?? []), item.answers))
+      lines.push(`   ${line.replaceAll("\n", "\n   ")}`)
     for (const asset of item.assets) {
       const name = asset.label ? `${asset.asset} (${asset.label})` : asset.asset
-      lines.push(`   - ${name}${verdictText(asset.verdict)}`)
-      if (asset.text) lines.push(`     ${asset.text.replaceAll("\n", "\n     ")}`)
+      lines.push(`   - ${name}`)
       for (const annotation of asset.annotations)
         lines.push(`     ${mark(annotation.n)} ${where(annotation)}: ${annotation.text.replaceAll("\n", " ")}`)
       if (asset.files.length > 0) lines.push(`     images: ${asset.files.join(", ")}`)

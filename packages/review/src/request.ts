@@ -1,6 +1,7 @@
 export * as ReviewRequest from "./request.js"
 
 import { Schema } from "effect"
+import { ReviewForm } from "./form.js"
 
 /**
  * What an agent submits with `review_request`, and what idle / `now` reviews are built from. Three built-in kinds
@@ -27,17 +28,16 @@ export const Asset = Schema.Struct({
 })
 export type Asset = typeof Asset.Type
 
-export const Check = Schema.Struct({ id: Schema.String, label: Schema.String })
-
 export const Feedback = Schema.Struct({
   annotate: Schema.optionalKey(
     Schema.Boolean.annotate({ description: "Let the reviewer draw points/boxes (line comments for diff) per asset" }),
   ),
-  verdict: Schema.optionalKey(Schema.Boolean.annotate({ description: "Ask for pass / fail on every asset" })),
-  checks: Schema.optionalKey(
-    Schema.Array(Check).annotate({ description: "Named checkpoints, each answered pass / fail for the item" }),
+  form: Schema.optionalKey(
+    Schema.Array(ReviewForm.Field).annotate({
+      description:
+        "Agent-defined feedback fields rendered in the item's pane: choice (one option), multi (many), or text. There is no built-in pass/fail, checklist, or comment; send those as form fields. A field with `when` is shown and required only when another field has a listed value.",
+    }),
   ),
-  required: Schema.optionalKey(Schema.Boolean.annotate({ description: "The reviewer must give a verdict to submit" })),
 })
 export type Feedback = typeof Feedback.Type
 
@@ -187,6 +187,7 @@ export function validate(
     if (item.kind !== "diff" && item.diff) errors.push(`${at}: only diff takes diff`)
     if ((item.custom?.files?.length ?? 0) > MAX_CUSTOM_FILES)
       errors.push(`${at}: at most ${MAX_CUSTOM_FILES} custom files`)
+    errors.push(...ReviewForm.validate(item.feedback?.form, at))
     const assetIDs = new Set<string>()
     const filled = assets.map((asset, assetIndex) => {
       const id = asset.id ?? idFrom(asset.path)
@@ -213,7 +214,7 @@ export function diffItem(bundle: string): StoredItem {
     title: "代码改动",
     bundle,
     assets: [],
-    feedback: { verdict: true, annotate: true },
+    feedback: { annotate: true, form: [ReviewForm.verdictChoice()] },
   }
 }
 

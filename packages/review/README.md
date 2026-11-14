@@ -85,6 +85,11 @@ for a while, and writes the reviewer's decision back into the session.
   the custom page's button so its result travels over the bridge, reloads to check the draft, submits with Ctrl+Enter,
   then checks `feedback.json`, the written-back prompt and its attachments, and that the link is spent. Exit 0 means all
   checks passed. It does not replace testing on real phones or in in-app browsers (WeChat, Feishu).
+- `bun packages/review/script/preview-pages.ts` (from the repo root) writes a static GitHub Pages demo of the same
+  approval shell to `packages/review/preview/dist` (gitignored). It uses relative asset URLs so the site works at
+  `https://younglark.github.io/opencode/` and when the files are opened locally. Submit stays in the page and does not
+  call a backend. The `.github/workflows/deploy-review-preview.yml` workflow (this fork only) builds that directory and
+  deploys it to GitHub Pages when Pages is enabled with GitHub Actions as the source.
 
 Build, versioning, sync-from-upstream, and why this fork must not be auto-upgraded to the official
 release are documented in [`FORK.md`](../../FORK.md) at the repository root.

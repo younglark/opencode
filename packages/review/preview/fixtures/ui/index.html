@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>画面设置</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<h1>画面设置</h1>
+<p>选一个预设，意见会通过桥接回到审批页。</p>
+<button type="button" id="night">选夜景预设</button>
+<button type="button" id="day">选白昼预设</button>
+<p id="restored"></p>
+<script>
+const apply = (preset, verdict, text) => {
+  opencodeReview.setResult({ preset: preset, volume: preset === "night" ? 0.8 : 0.4 })
+  opencodeReview.setVerdict(verdict)
+  opencodeReview.setText(text)
+}
+document.getElementById("night").onclick = () => apply("night", "fail", "夜景太暗")
+document.getElementById("day").onclick = () => apply("day", "pass", "白昼亮度合适")
+addEventListener("opencode-review:hello", (e) => {
+  const draft = e.detail.draft || {}
+  document.getElementById("restored").textContent = draft.custom
+    ? ("已恢复：" + JSON.stringify(draft.custom))
+    : "还没有这项的草稿。"
+})
+</script>
+</body></html>

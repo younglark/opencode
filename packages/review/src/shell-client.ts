@@ -407,6 +407,18 @@ export const SCRIPT = String.raw`
           } catch (error) {}
         }
       }
+      if (data.preview) {
+        try {
+          localStorage.removeItem(storageKey)
+        } catch (error) {}
+        paint(draft.decision)
+        const home = document.createElement("p")
+        home.className = "muted"
+        home.style.textAlign = "center"
+        home.innerHTML = '<a href="index.html">返回预览首页</a>'
+        document.body.appendChild(home)
+        return
+      }
       const response = await fetch(data.submit, {
         method: "POST",
         headers: { "content-type": "application/json" },

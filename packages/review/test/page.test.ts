@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { ReviewContext } from "../src/context.js"
 import { ReviewFeedback } from "../src/feedback.js"
 import { ReviewPage } from "../src/page.js"
+import { SCRIPT } from "../src/shell-client.js"
 import { ReviewState } from "../src/state.js"
 
 const review: ReviewState.Review = {
@@ -285,6 +286,54 @@ describe("approval shell", () => {
     const payload = page.split('id="review-data">')[1].split("</script>")[0]
     expect(payload).toContain("tok\\u0026en")
     expect(JSON.parse(payload).token).toBe("tok&en")
+  })
+
+  test("live mode keeps tokenized /api/review URLs and is not a preview", () => {
+    expect(page).not.toContain("这是静态预览，提交不会写回会话")
+    expect(page).not.toContain("data-preview-banner")
+    const data = JSON.parse(page.split('id="review-data">')[1].split("</script>")[0])
+    expect(data.preview).toBeUndefined()
+    expect(data.submit).toBe("/api/review/r1/submit")
+    expect(data.annotator).toBe("/api/review/r1/annotator?t=tok%26en")
+    expect(data.token).toBe("tok&en")
+    expect(data.items[0].sources.far).toBe("/api/review/r1/a/tok%26en/shots/far.png")
+  })
+
+  test("preview mode uses relative asset and annotator URLs without a token", () => {
+    const html = ReviewPage.approval({
+      review: { ...review, origin: "agent", request },
+      token: "tok&en",
+      diffs,
+      preview: { assetBase: "assets", annotator: "annotator.html", submitted: "submitted.html" },
+    })
+    expect(html).toContain("这是静态预览，提交不会写回会话")
+    expect(html).toContain("data-preview-banner")
+    expect(html).not.toContain("/api/review")
+    expect(html).not.toContain("tok%26en")
+    expect(html).toContain('src="annotator.html"')
+    expect(html).toContain("assets/shots/far.png")
+    expect(html).toContain("assets/ui/index.html")
+    expect(html).toContain('src="assets/ui/index.html"')
+    const data = JSON.parse(html.split('id="review-data">')[1].split("</script>")[0])
+    expect(data.preview).toBe(true)
+    expect(data.submit).toBe("")
+    expect(data.token).toBe("")
+    expect(data.annotator).toBe("annotator.html")
+    expect(data.submitted).toBe("submitted.html")
+    expect(data.items[0].sources.far).toBe("assets/shots/far.png")
+    expect(data.items[0].sources.far.startsWith("/") || data.items[0].sources.far.includes("?t=")).toBe(false)
+    expect(ReviewPage.assetURL("r1", "tok&en", "shots", "far.png")).toBe("/api/review/r1/a/tok%26en/shots/far.png")
+    expect(ReviewPage.assetURL("r1", "tok&en", "shots", "far.png", { assetBase: "assets", annotator: "annotator.html" })).toBe(
+      "assets/shots/far.png",
+    )
+  })
+
+  test("preview submit skips the live POST after validation and export", () => {
+    const decoded = SCRIPT.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    expect(decoded).toContain("if (data.preview)")
+    expect(decoded.indexOf("if (data.preview)")).toBeLessThan(decoded.indexOf("fetch(data.submit"))
+    expect(decoded).toContain("paint(draft.decision)")
+    expect(decoded).toContain("还有必填项未给结论")
   })
 })
 

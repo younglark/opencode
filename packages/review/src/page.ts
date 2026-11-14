@@ -16,6 +16,13 @@ export interface FileDiff {
   readonly status: string
 }
 
+/** Static-site preview: relative asset and annotator URLs, no token in the path, no live POST. */
+export interface Preview {
+  readonly assetBase: string
+  readonly annotator: string
+  readonly submitted?: string
+}
+
 const PATCH_LIMIT = 40_000
 const TOTAL_LIMIT = 400_000
 const PREVIEW_LINES = 50
@@ -227,8 +234,12 @@ ${turns}
 }
 
 /** Where the page loads a snapshotted file: the token rides in the path so a custom page's relative links work. */
-export function assetURL(reviewID: string, token: string, item: string, file: string) {
+export function assetURL(reviewID: string, token: string, item: string, file: string, preview?: Preview) {
   const path = file.split("/").map(encodeURIComponent).join("/")
+  if (preview) {
+    const base = preview.assetBase.replace(/\/+$/, "")
+    return `${base}/${encodeURIComponent(item)}/${path}`
+  }
   return `/api/review/${encodeURIComponent(reviewID)}/a/${encodeURIComponent(token)}/${encodeURIComponent(item)}/${path}`
 }
 
@@ -238,8 +249,9 @@ function assetPane(
   item: ReviewRequest.StoredItem,
   asset: ReviewRequest.StoredAsset,
   annotate = false,
+  preview?: Preview,
 ) {
-  const url = (file: string) => escape(assetURL(review.id, token, item.id, file))
+  const url = (file: string) => escape(assetURL(review.id, token, item.id, file, preview))
   const caption = `<figcaption>${escape(asset.label ? `${asset.label} · ${asset.id}` : asset.id)}</figcaption>`
   if (item.kind === "video") {
     if (annotate)
@@ -261,6 +273,7 @@ function itemPane(
   item: ReviewRequest.StoredItem,
   diffs: ReadonlyArray<FileDiff>,
   diffError?: string,
+  preview?: Preview,
 ) {
   const note = item.note ? `<p class="note">${escape(item.note)}</p>` : ""
   const head = `<header class="item-head"><h2>${escape(item.title)}</h2>${note}</header>`
@@ -269,7 +282,7 @@ function itemPane(
       diffError ? `<p class="muted">${escape(diffError)}</p>` : diffHTML(diffsFor(item, diffs), item.id)
     }</div></section>`
   if (item.kind === "custom" && item.custom) {
-    const src = escape(assetURL(review.id, token, item.id, item.custom.entry))
+    const src = escape(assetURL(review.id, token, item.id, item.custom.entry, preview))
     return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}<iframe class="custom-frame" data-custom data-item="${escape(item.id)}" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" src="${src}" title="${escape(item.title)}"></iframe></section>`
   }
   const switcher =
@@ -283,9 +296,9 @@ function itemPane(
       : ""
   const annotate = (item.kind === "image" || item.kind === "video") && Boolean(item.feedback?.annotate)
   const frame = annotate
-    ? `<p class="notice" data-annotator-note role="status" aria-live="polite">正在载入标注器…</p><iframe class="annotator-frame" data-annotator data-item="${escape(item.id)}" title="${escape("标注：" + item.title)}" src="${escape(ReviewAnnotator.route(review.id, token))}"></iframe>`
+    ? `<p class="notice" data-annotator-note role="status" aria-live="polite">正在载入标注器…</p><iframe class="annotator-frame" data-annotator data-item="${escape(item.id)}" title="${escape("标注：" + item.title)}" src="${escape(preview ? preview.annotator : ReviewAnnotator.route(review.id, token))}"></iframe>`
     : ""
-  const assets = item.assets.map((asset) => assetPane(review, token, item, asset, annotate)).join("")
+  const assets = item.assets.map((asset) => assetPane(review, token, item, asset, annotate, preview)).join("")
   return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}${switcher}<div class="viewer">${frame}${assets}</div></section>`
 }
 
@@ -337,21 +350,24 @@ export function approval(input: {
   readonly diffs: ReadonlyArray<FileDiff>
   readonly diffError?: string
   readonly context?: ReviewContext.Context
+  readonly preview?: Preview
 }) {
   const review = input.review
+  const preview = input.preview
   const items = review.request?.items ?? [ReviewRequest.diffItem(review.id)]
   const payload = {
     id: review.id,
-    token: input.token,
-    submit: `/api/review/${encodeURIComponent(review.id)}/submit`,
-    annotator: ReviewAnnotator.route(review.id, input.token),
+    token: preview ? "" : input.token,
+    submit: preview ? "" : `/api/review/${encodeURIComponent(review.id)}/submit`,
+    annotator: preview ? preview.annotator : ReviewAnnotator.route(review.id, input.token),
+    ...(preview ? { preview: true, ...(preview.submitted ? { submitted: preview.submitted } : {}) } : {}),
     items: items.map((item) => {
       const base = info(item, input.diffs)
       if ((item.kind !== "image" && item.kind !== "video") || !item.feedback?.annotate) return base
       const sources: Record<string, string> = {}
       const fps: Record<string, number> = {}
       for (const asset of item.assets) {
-        sources[asset.id] = assetURL(review.id, input.token, item.id, asset.stored.file)
+        sources[asset.id] = assetURL(review.id, input.token, item.id, asset.stored.file, preview)
         if (asset.fps) fps[asset.id] = asset.fps
       }
       return { ...base, annotate: true, sources, ...(item.kind === "video" && Object.keys(fps).length > 0 ? { fps } : {}) }
@@ -367,10 +383,10 @@ export function approval(input: {
         `<button type="button" data-go="${escape(item.id)}" data-status="unread"><span class="item-title">${escape(item.title)}</span><span class="item-status">未看</span></button>`,
     )
     .join("")
-  const panes = items.map((item) => itemPane(review, input.token, item, input.diffs, input.diffError)).join("\n")
+  const panes = items.map((item) => itemPane(review, input.token, item, input.diffs, input.diffError, preview)).join("\n")
   const feedback = items.map((item) => itemFeedback(item, diffsFor(item, input.diffs))).join("\n")
   const body = `<div id="shell">
-<header class="top"><div class="top-row"><div><h1>${escape(review.title)}</h1><div class="muted">${escape(review.directory)} · 有效期至 ${escape(new Date(review.expiresAt).toLocaleString("zh-CN", { hour12: false }))}</div></div><div class="counter" data-counter>第 1/${items.length} 项</div></div>${wait}</header>
+<header class="top"><div class="top-row"><div><h1>${escape(review.title)}</h1><div class="muted">${escape(review.directory)} · 有效期至 ${escape(new Date(review.expiresAt).toLocaleString("zh-CN", { hour12: false }))}</div></div><div class="counter" data-counter>第 1/${items.length} 项</div></div>${preview ? `<p class="wait" data-preview-banner role="status">这是静态预览，提交不会写回会话</p>` : ""}${wait}</header>
 ${contextHTML(review, input.context)}
 <noscript><style>.item-pane[hidden],.item-feedback[hidden],.asset-pane[hidden]{display:block!important}</style>请启用 JavaScript 后再提交审查。下面的内容和改动仍可查看。</noscript>
 <div class="workspace">

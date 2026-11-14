@@ -27,7 +27,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: ./.github/actions/setup-bun
+      # Not the repo's .github/actions/setup-bun: that runs `bun install --frozen-lockfile`
+      # for the whole monorepo, and this fork's lockfile/patches have drifted
+      # (e.g. @ai-sdk/mistral, @ai-sdk/google gone, gcp-metadata bumped), so that
+      # install fails. The preview script only needs Bun, Node, and `effect`.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Install preview dependencies
+        run: |
+          mkdir -p "$RUNNER_TEMP/preview-deps"
+          printf '%s\n' '{"name":"review-preview-deps","private":true,"type":"module","dependencies":{"effect":"4.1.0"}}' > "$RUNNER_TEMP/preview-deps/package.json"
+          bun install --cwd "$RUNNER_TEMP/preview-deps" --ignore-scripts
+          ln -s "$RUNNER_TEMP/preview-deps/node_modules" node_modules
       - name: Build static preview
         run: bun packages/review/script/preview-pages.ts
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

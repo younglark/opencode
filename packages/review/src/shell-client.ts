@@ -182,6 +182,22 @@ export const SCRIPT = String.raw`
     save()
   }
 
+  const annotatorNote = (item, text, bad, link) => {
+    const pane = qs('.item-pane[data-item="' + CSS.escape(item.id) + '"]')
+    const note = pane && qs("[data-annotator-note]", pane)
+    if (!note) return
+    note.hidden = !text
+    note.classList.toggle("bad", !!bad)
+    note.textContent = text || ""
+    if (link) {
+      const a = document.createElement("a")
+      a.href = link
+      a.target = "_blank"
+      a.rel = "noopener noreferrer"
+      a.textContent = "单独打开原文件"
+      note.append(" ", a)
+    }
+  }
   const customFrameOf = (item) => qs('iframe[data-custom][data-item="' + CSS.escape(item.id) + '"]')
   const postCustom = (iframe, message) => {
     if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage(message, "*")
@@ -315,7 +331,13 @@ export const SCRIPT = String.raw`
     syncVerdicts(item)
     syncNav()
     save()
-    if (item.annotate) void loadAnnotator(item, asset)
+    if (item.annotate) {
+      annotatorNote(item, "正在载入标注器…")
+      loadAnnotator(item, asset).catch((error) => {
+        const src = item.sources && item.sources[asset]
+        annotatorNote(item, "标注器没能打开这个素材（" + ((error && error.message) || "超时") + "）。仍可写文字意见并提交。", true, src)
+      })
+    }
     if (item.kind === "custom") helloCustom(item)
   }
 
@@ -359,7 +381,11 @@ export const SCRIPT = String.raw`
       return
     }
     const button = qs("[data-submit]")
-    if (button) button.disabled = true
+    if (button) {
+      button.disabled = true
+      button.setAttribute("aria-busy", "true")
+      button.textContent = "提交中…"
+    }
     showError("")
     try {
       const files = {}
@@ -406,7 +432,11 @@ export const SCRIPT = String.raw`
     } catch (error) {
       showError("网络出错，请重试。草稿仍在。")
     } finally {
-      if (button) button.disabled = false
+      if (button) {
+        button.disabled = false
+        button.removeAttribute("aria-busy")
+        button.textContent = "提交全部"
+      }
     }
   }
 
@@ -556,8 +586,23 @@ export const SCRIPT = String.raw`
       else if (item && item.annotate && currentItem() && currentItem().id === item.id) void loadAnnotator(item, currentAsset(item))
       return
     }
+    if (message.type === "review-annotator:error") {
+      const iframe = qsa("iframe[data-annotator]").find((frame) => frame.contentWindow === event.source)
+      const item = iframe && byId[iframe.getAttribute("data-item")]
+      if (!item) return
+      const waiter = loadWaiting[item.id]
+      if (waiter) {
+        clearTimeout(waiter.timer)
+        delete loadWaiting[item.id]
+        waiter.reject(new Error(String(message.message || "加载失败")))
+      } else {
+        annotatorNote(item, "标注器出错：" + String(message.message || "未知错误"), true)
+      }
+      return
+    }
     if (message.type === "review-annotator:change") {
       storeMarks(message.item, message.asset, message.annotations, message.raw)
+      if (byId[message.item]) annotatorNote(byId[message.item], "")
       const waiter = loadWaiting[message.item]
       if (waiter && waiter.asset === message.asset) {
         clearTimeout(waiter.timer)

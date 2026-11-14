@@ -251,6 +251,19 @@ describe("approval shell", () => {
     expect(html).toContain("review-annotator:load")
   })
 
+  test("announces loading, progress and errors, and surfaces annotator failures", () => {
+    // Bun may emit non-ASCII inside the shell script as \uXXXX escapes; read it the way the browser will.
+    const text = page.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    expect(page).toContain('data-annotator-note role="status" aria-live="polite">正在载入标注器…')
+    expect(page).toContain('data-progress role="status" aria-live="polite"')
+    expect(page).toContain('role="alert"')
+    expect(page).toContain("review-annotator:error")
+    expect(text).toContain("仍可写文字意见并提交")
+    expect(text).toContain("单独打开原文件")
+    expect(text).toContain("提交中…")
+    expect(page).toContain("aria-busy")
+  })
+
   test("migrates the diff with per-file verdicts and honors a file filter", () => {
     expect(page).toContain('id="d-diff-0"')
     expect(page).toContain('data-asset="a.ts"')

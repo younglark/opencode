@@ -102,6 +102,7 @@ figcaption{font-size:13px;color:var(--muted);margin-top:4px;word-break:break-all
 [data-submit]{flex:0 0 auto;min-width:140px;min-height:44px;padding:0 16px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:16px}
 [data-submit]:disabled{opacity:.6}
 .error{color:var(--bad);font-size:13px;margin:6px 0 0}
+.notice{font-size:13px;color:var(--muted);margin:6px 0;padding:6px 10px;border-left:3px solid var(--line);background:var(--card);border-radius:0 6px 6px 0}.notice[hidden]{display:none}.notice.bad{color:var(--bad);border-left-color:var(--bad)}.notice a{color:var(--accent)}
 .error[hidden]{display:none}
 noscript{display:block;padding:8px 16px;color:var(--warn)}
 @media (max-width:899px){
@@ -282,7 +283,7 @@ function itemPane(
       : ""
   const annotate = (item.kind === "image" || item.kind === "video") && Boolean(item.feedback?.annotate)
   const frame = annotate
-    ? `<iframe class="annotator-frame" data-annotator data-item="${escape(item.id)}" title="${escape("标注：" + item.title)}" src="${escape(ReviewAnnotator.route(review.id, token))}"></iframe>`
+    ? `<p class="notice" data-annotator-note role="status" aria-live="polite">正在载入标注器…</p><iframe class="annotator-frame" data-annotator data-item="${escape(item.id)}" title="${escape("标注：" + item.title)}" src="${escape(ReviewAnnotator.route(review.id, token))}"></iframe>`
     : ""
   const assets = item.assets.map((asset) => assetPane(review, token, item, asset, annotate)).join("")
   return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}${switcher}<div class="viewer">${frame}${assets}</div></section>`
@@ -391,8 +392,8 @@ ${panes}
 <button type="button" data-decision="stop" aria-pressed="false">先停下</button>
 </div>
 <label class="comment">总体意见（可选；选“需要修改”时请填写）<textarea class="overall-text" data-overall placeholder="写给 agent 的总体意见。对各文件和各项的意见写在对应位置，会一并提交。"></textarea></label>
-<div class="submit-row"><span class="count" data-progress>已完成 0/${items.length}</span><button type="button" data-submit>提交全部</button></div>
-<p class="error" data-error hidden></p>
+<div class="submit-row"><span class="count" data-progress role="status" aria-live="polite">已完成 0/${items.length}</span><button type="button" data-submit>提交全部</button></div>
+<p class="error" data-error role="alert" hidden></p>
 </footer>
 </div>`
   const extra = `<script type="application/json" id="review-data">${jsonScript(payload)}</script><script>${SCRIPT}</script>`

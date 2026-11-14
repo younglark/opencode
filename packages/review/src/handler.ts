@@ -1,8 +1,10 @@
 export * as ReviewHandler from "./handler.js"
 
+import fs from "node:fs/promises"
 import { Effect, Schema } from "effect"
 import { ReviewAnnotator } from "./annotator.js"
 import { ReviewAssets } from "./assets.js"
+import { ReviewCustom } from "./custom.js"
 import type { ReviewContext } from "./context.js"
 import type { ReviewController } from "./controller.js"
 import { ReviewDecide } from "./decide.js"
@@ -281,6 +283,13 @@ export function make(deps: Deps) {
     const headers: Record<string, string> = { "accept-ranges": "bytes" }
     // Agent pages run scripts, but in an opaque origin: no access to the approval page or its token.
     if (item.kind === "custom") headers["content-security-policy"] = "sandbox allow-scripts allow-forms"
+    // HTML is rewritten to inject the host bridge, so its on-disk size and byte ranges no longer apply.
+    if (item.kind === "custom" && ReviewCustom.isHtml(stored.mime)) {
+      const raw = yield* Effect.tryPromise(() => fs.readFile(path, "utf8")).pipe(Effect.option)
+      if (raw._tag === "None") return { type: "error", status: 404 } satisfies AssetResponse
+      const bytes = new TextEncoder().encode(ReviewCustom.inject(raw.value))
+      return { type: "file", path, mime: stored.mime, size: bytes.length, bytes, status: 200, headers } satisfies AssetResponse
+    }
     const range = ReviewAssets.range(input.range, stored.size)
     if (range.type === "unsatisfiable") return { type: "error", status: 416 } satisfies AssetResponse
     if (range.type === "full")

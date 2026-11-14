@@ -189,6 +189,19 @@ describe("result", () => {
     expect(ReviewResult.attachments(checked)).toEqual(["shots-far.png", "attack-clip-96.png"])
   })
 
+  test("drops a custom payload that exceeds the draft cap", () => {
+    const huge = { id: "settings", custom: { blob: "n".repeat(70_000) } }
+    const checked = ReviewResult.check({
+      reviewID: "r1",
+      now: 0,
+      raw: { decision: "continue", items: [huge] },
+      items,
+      uploaded: new Set(),
+    })!
+    expect(checked.items.find((item) => item.id === "settings")).toBeUndefined()
+    expect(checked.skipped).toContain("settings")
+  })
+
   test("file names stay plain image names", () => {
     expect(ReviewResult.fileName("shots-far.png")).toBe(true)
     expect(ReviewResult.fileName("../x.png")).toBe(false)

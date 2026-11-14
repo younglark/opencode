@@ -56,6 +56,7 @@ export const SCRIPT = String.raw`
       saved.verdict ||
       (saved.text && saved.text.trim()) ||
       (saved.checks && Object.keys(saved.checks).length) ||
+      (saved.custom !== undefined) ||
       (saved.assets &&
         Object.keys(saved.assets).some((id) => {
           const asset = saved.assets[id]
@@ -92,12 +93,14 @@ export const SCRIPT = String.raw`
         if (verdict) checks.push({ id: check.id, verdict })
       }
       const text = saved.text && saved.text.trim()
-      if (!saved.verdict && !text && assets.length === 0 && checks.length === 0) continue
+      const custom = item.kind === "custom" ? saved.custom : undefined
+      if (!saved.verdict && !text && assets.length === 0 && checks.length === 0 && custom === undefined) continue
       const entry = { id: item.id }
       if (saved.verdict) entry.verdict = saved.verdict
       if (text) entry.text = text
       if (assets.length) entry.assets = assets
       if (checks.length) entry.checks = checks
+      if (custom !== undefined) entry.custom = custom
       result.push(entry)
     }
     const body = { decision: draft.decision }
@@ -176,6 +179,39 @@ export const SCRIPT = String.raw`
     if (files) saved.files = files
     else if (files === undefined && saved.annotations && saved.annotations.length && !saved.annotations.some((mark) => mark.frame))
       saved.files = saved.files || [fileName(itemID, asset)]
+    save()
+  }
+
+  const customFrameOf = (item) => qs('iframe[data-custom][data-item="' + CSS.escape(item.id) + '"]')
+  const postCustom = (iframe, message) => {
+    if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage(message, "*")
+  }
+  const helloCustom = (item) => {
+    if (!item || item.kind !== "custom") return
+    const iframe = customFrameOf(item)
+    if (!iframe) return
+    const saved = (draft.items && draft.items[item.id]) || {}
+    const state = {}
+    if (saved.verdict) state.verdict = saved.verdict
+    if (saved.text) state.text = saved.text
+    if (saved.custom !== undefined) state.custom = saved.custom
+    postCustom(iframe, { type: "opencode-review:hello", v: 1, item: item.id, draft: state })
+  }
+  const storeCustom = (itemID, patch) => {
+    const item = byId[itemID]
+    if (!item || item.kind !== "custom") return
+    const saved = ensureItem(itemID)
+    if (patch.verdict === "pass" || patch.verdict === "fail") saved.verdict = patch.verdict
+    if (typeof patch.text === "string") saved.text = patch.text
+    if (Object.prototype.hasOwnProperty.call(patch, "custom")) {
+      try {
+        const json = JSON.stringify(patch.custom)
+        if (typeof json === "string" && json.length <= 65536) saved.custom = JSON.parse(json)
+      } catch (error) {}
+    }
+    applySuggest()
+    syncVerdicts(item)
+    syncNav()
     save()
   }
 
@@ -280,6 +316,7 @@ export const SCRIPT = String.raw`
     syncNav()
     save()
     if (item.annotate) void loadAnnotator(item, asset)
+    if (item.kind === "custom") helloCustom(item)
   }
 
   const setDecision = (decision) => {
@@ -459,9 +496,55 @@ export const SCRIPT = String.raw`
   })
 
   window.addEventListener("message", (event) => {
-    if (event.origin !== origin) return
     const message = event.data
     if (!message || typeof message !== "object" || typeof message.type !== "string") return
+    if (message.type.startsWith("opencode-review:")) {
+      if (message.v !== 1) return
+      const iframe = qsa("iframe[data-custom]").find((frame) => frame.contentWindow === event.source)
+      if (!iframe) return
+      if (event.origin !== "null" && event.origin !== origin) return
+      const itemID = iframe.getAttribute("data-item")
+      if (message.type === "opencode-review:ready") {
+        const item = byId[itemID]
+        if (item) helloCustom(item)
+        return
+      }
+      if (message.type === "opencode-review:result") {
+        storeCustom(itemID, { custom: message.result })
+        return
+      }
+      if (message.type === "opencode-review:verdict") {
+        storeCustom(itemID, { verdict: message.verdict })
+        return
+      }
+      if (message.type === "opencode-review:text") {
+        storeCustom(itemID, { text: message.text })
+        return
+      }
+      if (message.type === "opencode-review:shortcut") {
+        const key = message.key
+        if (message.ctrl && key === "Enter") return void submit()
+        const item = currentItem()
+        if (!item) return
+        if (key === "j" || key === "J" || key === "ArrowDown") {
+          const index = items.findIndex((entry) => entry.id === item.id) + 1
+          if (items[index]) show(items[index].id)
+        } else if (key === "k" || key === "K" || key === "ArrowUp") {
+          const index = items.findIndex((entry) => entry.id === item.id) - 1
+          if (items[index]) show(items[index].id)
+        } else if (key === "p" || key === "P" || key === "f" || key === "F") {
+          const value = key === "p" || key === "P" ? "pass" : "fail"
+          if (item.feedback && item.feedback.verdict && item.assetIDs.length) assetOf(item.id, currentAsset(item)).verdict = value
+          else ensureItem(item.id).verdict = value
+          applySuggest()
+          syncVerdicts(item)
+          syncNav()
+          save()
+        }
+      }
+      return
+    }
+    if (event.origin !== origin) return
     if (!message.type.startsWith("review-annotator:")) return
     if (message.type === "review-annotator:ready") {
       const iframe = qsa("iframe[data-annotator]").find((frame) => frame.contentWindow === event.source)
@@ -519,6 +602,12 @@ export const SCRIPT = String.raw`
   })
   qsa("iframe[data-annotator]").forEach((iframe) => {
     iframe.addEventListener("load", () => postFrame(iframe, { type: "review-annotator:hello" }))
+  })
+  qsa("iframe[data-custom]").forEach((iframe) => {
+    iframe.addEventListener("load", () => {
+      const item = byId[iframe.getAttribute("data-item")]
+      if (item) helloCustom(item)
+    })
   })
 
   const viewport = window.visualViewport

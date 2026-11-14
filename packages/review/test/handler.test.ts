@@ -301,6 +301,61 @@ describe("agent reviews", async () => {
     expect(h.stored().status).toBe("open")
     expect(h.storage.map.get(ReviewState.OPEN_PREFIX + "s1")).toEqual([h.id])
   })
+
+  test("injects the custom-page bridge into entry HTML and sandboxes it", async () => {
+    await fs.writeFile(path.join(work, "index.html"), "<!doctype html><html><body><p>设置</p></body></html>")
+    const bundle = "custom-bridge"
+    const items = await run(
+      ReviewAssets.snapshot({
+        root,
+        directory: work,
+        bundle,
+        items: [{ id: "ui", kind: "custom", title: "设置页", custom: { entry: "index.html", files: [] } }],
+      }),
+    )
+    const token = ReviewToken.generate()
+    const storage = memoryStorage()
+    storage.map.set(ReviewState.REVIEW_PREFIX + bundle, {
+      id: bundle,
+      sessionID: "s1",
+      directory: work,
+      title: "Settings",
+      summary: "设置",
+      tokenHash: ReviewToken.hash(token),
+      marker: 100,
+      createdAt: 1_000,
+      expiresAt: 1_000 + ReviewState.DEFAULT_TTL,
+      status: "open",
+      origin: "agent",
+      request: { items, wait: { mode: "async" } },
+    })
+    const handler = ReviewHandler.make({
+      storage,
+      root,
+      now: Effect.sync(() => 5_000),
+      session: () => Effect.succeed({ busy: 4_000, idle: 100 }),
+      diff: () => Effect.succeed([]),
+      prompt: () => Effect.void,
+    })
+    const file = await run(handler.asset({ reviewID: bundle, token, item: "ui", file: "index.html" }))
+    expect(file).toMatchObject({
+      type: "file",
+      status: 200,
+      mime: "text/html; charset=utf-8",
+      headers: { "accept-ranges": "bytes", "content-security-policy": "sandbox allow-scripts allow-forms" },
+    })
+    expect(file.type === "file" && file.bytes).toBeDefined()
+    const html = file.type === "file" ? Buffer.from(file.bytes!).toString("utf8") : ""
+    expect(html).toContain("设置")
+    expect(html).toContain("window.opencodeReview")
+    expect(html).toContain('id="opencode-review-bridge"')
+    expect(html).toContain("opencode-review:")
+    expect(html).toContain("P+'result'")
+    const ranged = await run(
+      handler.asset({ reviewID: bundle, token, item: "ui", file: "index.html", range: "bytes=0-3" }),
+    )
+    expect(ranged).toMatchObject({ type: "file", status: 200, size: file.type === "file" ? file.size : 0 })
+  })
 })
 
 describe("annotator page", () => {

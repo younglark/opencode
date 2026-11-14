@@ -2,6 +2,7 @@ export * as ReviewResult from "./result.js"
 
 import { Option, Schema } from "effect"
 import type { ReviewRequest } from "./request.js"
+import { ReviewCustom } from "./custom.js"
 import { ReviewState } from "./state.js"
 
 /** What the approval page submits once, for every item at the same time. */
@@ -171,7 +172,7 @@ export function check(input: {
     const verdict =
       sent?.verdict ?? (verdicts.includes("fail") ? "fail" : verdicts.length > 0 ? ("pass" as const) : undefined)
     const text = clip(sent?.text)
-    const custom = item.kind === "custom" ? sent?.custom : undefined
+    const custom = item.kind === "custom" ? ReviewCustom.clip(sent?.custom) : undefined
     if (!verdict && !text && assets.length === 0 && checks.length === 0 && custom === undefined) {
       skipped.push(item.id)
       continue

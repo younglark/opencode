@@ -171,6 +171,27 @@ describe("submission", () => {
     })
   })
 
+
+  test("keeps a custom page payload in the draft and the submission", () => {
+    const custom = { volume: 0.8, preset: "night" }
+    const draft: ReviewShell.Draft = {
+      v: 1,
+      decision: "changes",
+      items: { notes: { verdict: "fail", text: "横屏被挡住", custom } },
+    }
+    expect(ReviewShell.status(notes, draft)).toBe("fail")
+    expect(ReviewShell.toSubmission(items, draft)).toEqual({
+      decision: "changes",
+      items: [{ id: "notes", verdict: "fail", text: "横屏被挡住", custom }],
+    })
+    const only: ReviewShell.Draft = { v: 1, decision: "continue", items: { notes: { custom } } }
+    expect(ReviewShell.status(notes, only)).toBe("open")
+    expect(ReviewShell.toSubmission(items, only)).toEqual({
+      decision: "continue",
+      items: [{ id: "notes", custom }],
+    })
+  })
+
   test("suggests changes when anything failed, continue when every judged item passed, and keeps stop", () => {
     const draft: ReviewShell.Draft = { v: 1, decision: "continue", items: { shots: { verdict: "fail" } } }
     expect(ReviewShell.suggest(items, draft)).toBe("changes")

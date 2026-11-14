@@ -269,7 +269,7 @@ function itemPane(
     }</div></section>`
   if (item.kind === "custom" && item.custom) {
     const src = escape(assetURL(review.id, token, item.id, item.custom.entry))
-    return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}<iframe class="custom-frame" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" src="${src}" title="${escape(item.title)}"></iframe></section>`
+    return `<section class="item-pane" data-item="${escape(item.id)}" hidden>${head}<iframe class="custom-frame" data-custom data-item="${escape(item.id)}" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" src="${src}" title="${escape(item.title)}"></iframe></section>`
   }
   const switcher =
     item.assets.length > 1

@@ -31,6 +31,8 @@ export interface ItemDraft {
   text?: string
   checks?: { [id: string]: Verdict }
   assets?: { [id: string]: AssetDraft }
+  /** Structured payload from a custom page (opencode-review protocol). */
+  custom?: unknown
 }
 
 export interface Draft {
@@ -96,7 +98,7 @@ export function itemVerdict(item: ItemInfo, draft: Draft): Verdict | undefined {
 
 function hasInput(item: ItemInfo, draft: Draft) {
   const saved = itemDraft(draft, item.id)
-  if (saved.verdict || saved.text?.trim()) return true
+  if (saved.verdict || saved.text?.trim() || saved.custom !== undefined) return true
   if (Object.values(saved.checks ?? {}).length > 0) return true
   return Object.values(saved.assets ?? {}).some((asset) => Boolean(asset.verdict || asset.text?.trim() || asset.annotations?.length || asset.raw))
 }
@@ -145,7 +147,8 @@ export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): Revi
       return verdict ? [{ id: check.id, verdict }] : []
     })
     const text = saved.text?.trim()
-    if (!saved.verdict && !text && assets.length === 0 && checks.length === 0) return []
+    const custom = item.kind === "custom" ? saved.custom : undefined
+    if (!saved.verdict && !text && assets.length === 0 && checks.length === 0 && custom === undefined) return []
     return [
       {
         id: item.id,
@@ -153,6 +156,7 @@ export function toSubmission(items: ReadonlyArray<ItemInfo>, draft: Draft): Revi
         ...(text ? { text } : {}),
         ...(assets.length > 0 ? { assets } : {}),
         ...(checks.length > 0 ? { checks } : {}),
+        ...(custom !== undefined ? { custom } : {}),
       },
     ]
   })
